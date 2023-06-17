@@ -1,3 +1,6 @@
+![identicons-2](https://i.imgur.com/42ZD3FG.png)
+![identicons-1](https://i.imgur.com/bqjb4yW.png)
+
 # Demo
 
 [Demo](https://svelte-identicons.vercel.app/)
