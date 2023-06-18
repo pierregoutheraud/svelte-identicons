@@ -240,14 +240,14 @@ export default class Identicon {
 				(acc, letter) => {
 					const letterMatrix = PIXEL_3x4_LETTERS[letter.toUpperCase() as 'A'];
 
+					if (!letterMatrix) {
+						return acc;
+					}
+
 					const textMatrixNewWidth = acc[0].length + letterMatrix[0].length;
 
 					// Too many letter, it won't fit
 					if (textMatrixNewWidth >= width) {
-						return acc;
-					}
-
-					if (!letterMatrix) {
 						return acc;
 					}
 
