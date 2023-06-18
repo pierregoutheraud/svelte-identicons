@@ -60,14 +60,23 @@
 		textColor={params.textColor}
 		bind:canvasElement
 	/>
-	<Code {params} />
-	<button on:click={handleDownload}>Download image</button>
-	<button on:click={() => handleCopyLink(params)}>Copy link</button>
+	<div class="actions">
+		<Code {params} />
+		<button on:click={handleDownload}>Download image</button>
+		<button on:click={() => handleCopyLink(params)}>Copy link</button>
+	</div>
 </div>
 
 <style>
 	.IdenticonItem {
 		display: flex;
-		gap: 10px;
+		flex-direction: column;
+		align-items: center;
+		gap: 18px;
+	}
+
+	.actions {
+		display: flex;
+		gap: 18px;
 	}
 </style>

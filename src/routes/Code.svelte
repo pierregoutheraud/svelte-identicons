@@ -25,20 +25,20 @@
 </script>
 
 <div class="Code">
-	<pre><code class="language-pascal">{code}</code></pre>
 	<button on:click={handleClick}>Copy code</button>
+	<pre><code class="language-pascal">{code}</code></pre>
 </div>
 
 <style>
 	.Code {
 		display: flex;
+		flex-direction: column;
 		gap: 0;
 	}
 	pre {
 		height: fit-content;
-		background: #22252b;
+		background: black;
+		padding: 10px 16px;
 		color: #c6ccd7;
-		padding: 20px;
-		margin: 0;
 	}
 </style>

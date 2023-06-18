@@ -1,5 +1,5 @@
+import { PIXEL_3x4_LETTERS } from '$lib/constants/pixel-letters.js';
 import { Random } from '../../helpers/Random.js';
-import { PIXEL_3x4_LETTERS, addZerosAroundMatrix } from '../../helpers/pixelLetters.js';
 
 export interface IdenticonOptions {
 	seed?: string; // seed used to generate icon data, default: random
@@ -13,6 +13,15 @@ export interface IdenticonOptions {
 	textColor?: string;
 	symetry?: 'axial' | 'central' | 'none';
 	text?: string;
+	textPadding?: number;
+	textPosition?:
+		| 'top-center'
+		| 'top-left'
+		| 'top-right'
+		| 'bottom-center'
+		| 'bottom-left'
+		| 'bottom-right'
+		| 'center';
 }
 
 export default class Identicon {
@@ -48,6 +57,8 @@ export default class Identicon {
 			textColor: '#fff',
 			textBackgroundColor: undefined,
 			symetry: 'axial',
+			textPosition: 'bottom-right',
+			textPadding: 1,
 			...options,
 			text: options.text?.trim() || undefined,
 			numberOfColors: colors.length,
@@ -152,9 +163,74 @@ export default class Identicon {
 		return data;
 	}
 
+	getTextPosition(textMatrix: number[][]) {
+		const { width, height, textPosition } = this.options;
+		let top = 0;
+		let left = 0;
+		switch (textPosition) {
+			case 'top-left':
+				top = 0;
+				left = 0;
+				break;
+			case 'top-right':
+				top = 0;
+				left = width - textMatrix[0].length;
+				break;
+			case 'top-center':
+				top = 0;
+				left = Math.floor((width - textMatrix[0].length) / 2);
+				break;
+			case 'bottom-left':
+				top = height - textMatrix.length;
+				left = 0;
+				break;
+			case 'bottom-center':
+				top = height - textMatrix.length;
+				left = Math.floor((width - textMatrix[0].length) / 2);
+				break;
+			case 'bottom-right':
+				top = height - textMatrix.length;
+				left = width - textMatrix[0].length;
+				break;
+			case 'center':
+				top = Math.floor((height - textMatrix.length) / 2);
+				left = Math.floor((width - textMatrix[0].length) / 2);
+				break;
+		}
+		return { top, left };
+	}
+
+	addZerosAroundMatrix(matrix: number[][], padding = 1) {
+		const paddingZeroes = Array(padding).fill(0);
+
+		// prettier-ignore
+		return [
+			...paddingZeroes.map(() => [
+				...paddingZeroes,
+				...new Array(matrix[0].length).fill(0),
+				...paddingZeroes
+			]),
+			...matrix.map((row) => [...paddingZeroes, ...row, ...paddingZeroes]),
+			...paddingZeroes.map(() => [
+				...paddingZeroes,
+				...new Array(matrix[0].length).fill(0),
+				...paddingZeroes
+			])
+		];
+	}
+
 	render() {
-		const { height, width, pixelSize, shape, colors, textColor, textBackgroundColor, text } =
-			this.options;
+		const {
+			height,
+			width,
+			pixelSize,
+			shape,
+			colors,
+			textColor,
+			textBackgroundColor,
+			text,
+			textPadding
+		} = this.options;
 
 		this.imageData = this.createImageData();
 
@@ -188,12 +264,9 @@ export default class Identicon {
 				[[], [], [], []]
 			);
 
-			textMatrix = addZerosAroundMatrix(textMatrix, 1);
+			textMatrix = this.addZerosAroundMatrix(textMatrix, textPadding);
 
-			const top = height - textMatrix.length;
-			const left = width - textMatrix[0].length;
-
-			// const textMatrixWidth = textMatrix[0].length;
+			const { top, left } = this.getTextPosition(textMatrix);
 
 			for (let letterY = 0; letterY < textMatrix.length; letterY++) {
 				for (let letterX = 0; letterX < textMatrix[0].length; letterX++) {
@@ -201,9 +274,9 @@ export default class Identicon {
 					const letterValue = textMatrix[letterY][letterX];
 
 					if (letterValue === 0) {
-						// this.imageData[imageDataIndex] = colors[0];
 						if (textBackgroundColor) {
-							this.imageData[imageDataIndex] = textBackgroundColor;
+							this.imageData[imageDataIndex] =
+								textBackgroundColor === 'main' ? colors[0] : textBackgroundColor;
 						}
 					} else {
 						this.imageData[imageDataIndex] = textColor;

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Identicon from './Identicon.js';
+	import Identicon, { type IdenticonOptions } from './Identicon.js';
 
 	export let height: number; // height in blocks
 	export let width: number; // width in blocks
@@ -12,6 +12,9 @@
 	export let colors: string[] | undefined = undefined;
 	export let symetry: 'axial' | 'central' | 'none' | undefined = 'axial';
 	export let textColor: string | undefined;
+	export let textBackgroundColor: string | undefined = undefined;
+	export let textPosition: IdenticonOptions['textPosition'] = 'bottom-right';
+	export let textPadding: number = 1;
 
 	let widthInPixels: number | undefined = undefined;
 	let heightInPixels: number | undefined = undefined;
@@ -27,11 +30,13 @@
 			pixelSize,
 			shape,
 			numberOfColors,
-			textColor: textColor || '#ffffff',
-			textBackgroundColor: undefined,
 			colors,
 			symetry,
-			text
+			text,
+			textPosition,
+			textColor: textColor || '#ffffff',
+			textBackgroundColor,
+			textPadding
 		});
 	}
 </script>

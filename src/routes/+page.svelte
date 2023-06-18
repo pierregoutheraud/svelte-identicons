@@ -3,8 +3,10 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import type { IdenticonOptions } from '$lib/components/Identicon/Identicon.js';
+	import Identicon from '$lib/components/Identicon/Identicon.svelte';
 	import { generatePseudoWord } from '$lib/helpers/general.helpers.js';
 	import IdenticonItem, { type Params } from './IdenticonItem.svelte';
+	import './global.css';
 
 	let params: Params = parseParams($page.url.searchParams);
 	let prevParams: Params | undefined = undefined;
@@ -49,7 +51,7 @@
 		const newQueryParamsString = createUrl(params);
 
 		if (browser) {
-			goto(`${newQueryParamsString}`, { keepFocus: true });
+			goto(`${newQueryParamsString}`, { keepFocus: true, noScroll: true });
 		}
 
 		prevParams = structuredClone(params);
@@ -135,46 +137,46 @@
 </script>
 
 <main>
+	<div class="logo">
+		<Identicon
+			seed={params.seed}
+			height={14}
+			width={80}
+			pixelSize={10}
+			numberOfColors={2}
+			symetry="central"
+			text="svelte-identicons"
+			textBackgroundColor="main"
+			textColor="#ffffff"
+			textPadding={2}
+			textPosition="center"
+		/>
+	</div>
+
 	<div class="filters">
-		<fieldset>
-			<legend>Seed</legend>
-			<label>
-				<input bind:value={params.seed} />
+		<div class="filters-top">
+			<div class="fieldset seed">
+				<label class="input-field">
+					<p>Seed</p>
+					<input type="text" bind:value={params.seed} placeholder="Seed" />
+				</label>
 				<button
 					on:click={() => {
 						params = {
 							...params,
 							seed: generateSeed()
 						};
-					}}>Generate</button
+					}}
 				>
-			</label>
-		</fieldset>
-
-		<fieldset>
-			<legend>Colors</legend>
-			<div class="colors">
-				{#each params.colors as color, i}
-					<div class="color">
-						<p>{color}</p>
-						<input
-							type="color"
-							id="head"
-							name="head"
-							value={color}
-							on:change={(e) => handleChangeColor(i, e)}
-						/>
-						<button on:click={() => handleRemoveColor(i)}>-</button>
-					</div>
-				{/each}
-				<button on:click={handleAddColor}>+</button>
+					Generate
+				</button>
 			</div>
-		</fieldset>
+		</div>
 
 		{#if !params.colors.length}
-			<fieldset>
-				<legend>Number of colors</legend>
-				<label>
+			<div class="fieldset">
+				<label class="input-field">
+					<p>Number of colors</p>
 					<input
 						type="number"
 						value={params.numberOfColors}
@@ -182,93 +184,112 @@
 						max="10"
 						on:input={(e) => handleChangeInputNumber(e, 'numberOfColors')}
 					/>
-					<input type="range" bind:value={params.numberOfColors} min="2" max="10" />
 				</label>
-			</fieldset>
+			</div>
 		{/if}
 
-		<fieldset>
-			<legend>text</legend>
-			<label>
-				<input bind:value={params.text} />
-				<!-- <input type="color" id="head" name="head" bind:value={params.textColor} /> -->
-				<input
-					type="color"
-					id="head"
-					name="head"
-					value={params.textColor}
-					on:change={handleChangeTextColor}
-				/>
-			</label>
-		</fieldset>
+		<div class="fieldset fieldset-colors">
+			<p>Custom colors</p>
+			{#if params.colors}
+				<div class="colors">
+					{#each params.colors as color, i}
+						<div class="color">
+							<p>{color}</p>
+							<input
+								type="color"
+								id="head"
+								name="head"
+								value={color}
+								on:change={(e) => handleChangeColor(i, e)}
+							/>
+							<button on:click={() => handleRemoveColor(i)}>Remove</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+			<button on:click={handleAddColor}>Add</button>
+		</div>
 
-		<fieldset>
-			<legend>Height</legend>
-			<label>
-				<input
-					type="number"
-					value={params.height}
-					min="1"
-					max="100"
-					on:input={(e) => handleChangeInputNumber(e, 'height')}
-				/>
-				<input type="range" bind:value={params.height} min="1" max="500" />
-			</label>
-		</fieldset>
-
-		<fieldset>
-			<legend>Width</legend>
-			<label>
-				<input
-					type="number"
-					value={params.width}
-					min="1"
-					max="100"
-					on:input={(e) => handleChangeInputNumber(e, 'width')}
-				/>
-				<input type="range" bind:value={params.width} min="1" max="500" />
-			</label>
-		</fieldset>
-
-		<fieldset>
-			<legend>Pixel size</legend>
-			<label>
-				<input
-					type="number"
-					value={params.pixelSize}
-					min="1"
-					max="100"
-					on:input={(e) => handleChangeInputNumber(e, 'pixelSize')}
-				/>
-				<input type="range" bind:value={params.pixelSize} min="1" max="100" />
-			</label>
-		</fieldset>
-
-		<fieldset>
-			<legend>Symetry</legend>
-
-			<div>
-				<label for="symetry-axial">Axial</label>
-				<input
-					id="symetry-axial"
-					type="radio"
-					bind:group={params.symetry}
-					name="symetry"
-					value="axial"
-				/>
+		<div class="fieldsets-row">
+			<div class="fieldset">
+				<label class="input-field">
+					<p>Height</p>
+					<input
+						type="number"
+						value={params.height}
+						min="1"
+						max="100"
+						on:input={(e) => handleChangeInputNumber(e, 'height')}
+					/>
+					<!-- <input type="range" bind:value={params.height} min="1" max="500" /> -->
+				</label>
 			</div>
 
-			<div>
-				<label for="symetry-central">Central</label>
-				<input
-					id="symetry-central"
-					type="radio"
-					bind:group={params.symetry}
-					name="symetry"
-					value="central"
-				/>
+			<div class="fieldset">
+				<label class="input-field">
+					<p>Width</p>
+					<input
+						type="number"
+						value={params.width}
+						min="1"
+						max="100"
+						on:input={(e) => handleChangeInputNumber(e, 'width')}
+					/>
+					<!-- <input type="range" bind:value={params.width} min="1" max="500" /> -->
+				</label>
 			</div>
-		</fieldset>
+
+			<div class="fieldset">
+				<label class="input-field">
+					<p>Pixel size</p>
+					<input
+						type="number"
+						value={params.pixelSize}
+						min="1"
+						max="100"
+						on:input={(e) => handleChangeInputNumber(e, 'pixelSize')}
+					/>
+					<!-- <input type="range" bind:value={params.pixelSize} min="1" max="100" /> -->
+				</label>
+			</div>
+		</div>
+
+		<div class="fieldsets-row">
+			<div class="fieldset">
+				<label class="input-field">
+					<p>Text</p>
+					<input type="text" bind:value={params.text} />
+					<input
+						type="color"
+						id="head"
+						name="head"
+						value={params.textColor}
+						on:change={handleChangeTextColor}
+					/>
+				</label>
+			</div>
+
+			<div class="fieldset fieldset-radio">
+				<p>Symetry</p>
+				<div>
+					<label class="radio">
+						<input type="radio" bind:group={params.symetry} name="symetry" value="axial" />
+						<p>Axial</p>
+					</label>
+
+					<label class="radio">
+						<input
+							id="symetry-central"
+							type="radio"
+							bind:group={params.symetry}
+							name="symetry"
+							value="central"
+						/>
+						<p>Central</p>
+					</label>
+				</div>
+			</div>
+		</div>
 	</div>
 
 	<div class="item">
@@ -290,40 +311,92 @@
 <style>
 	main {
 		display: flex;
+		align-items: center;
 		flex-direction: column;
-		gap: 30px;
+		gap: 50px;
+		width: 800px;
+		margin: 40px auto;
 	}
 
 	.filters {
 		display: flex;
-		flex-wrap: wrap;
+		flex-direction: column;
+		justify-content: center;
+		gap: 10px;
+		width: 100%;
+	}
+
+	.fieldset {
+		display: flex;
+		border: none;
+		border: 1px solid white;
+		align-items: center;
+		height: fit-content;
+		padding: 0 0 0 10px;
+		justify-content: space-between;
+	}
+
+	.fieldset button {
+		margin-left: auto;
+	}
+
+	.fieldset label > p {
+		font-size: 16px;
+		position: relative;
+		padding-right: 10px;
+		top: 1px;
+	}
+
+	.input-field {
+		display: flex;
+		flex: 1;
+	}
+	.input-field p {
+		display: flex;
+		align-items: center;
+	}
+	.input-field input:first-of-type {
+		flex: 1;
+	}
+
+	.fieldsets-row {
+		display: flex;
+		gap: 14px;
+	}
+	.fieldsets-row .fieldset {
+		flex: 1;
+	}
+
+	.fieldset-radio > div {
+		display: flex;
 		gap: 20px;
+		margin-right: 10px;
+	}
+
+	label.radio {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 	}
 
 	.colors {
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+		margin: 10px auto;
 	}
 
 	.color {
 		display: flex;
-	}
-
-	label {
-		display: flex;
-		flex-direction: column;
-	}
-
-	input {
-		font-size: 16px;
-		padding: 5px;
-		width: 300px;
+		align-items: center;
+		gap: 8px;
 	}
 
 	.history {
 		display: flex;
+		align-items: center;
 		flex-direction: column;
-		gap: 4px;
+		gap: 30px;
+		margin-top: 50px;
 	}
 </style>

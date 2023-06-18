@@ -132,6 +132,12 @@ export const PIXEL_3x3_LETTERS = {
 };
 
 export const PIXEL_3x4_LETTERS = {
+	'-': [
+		[0, 0, 0],
+		[1, 1, 1],
+		[0, 0, 0],
+		[0, 0, 0]
+	],
 	' ': [
 		[0, 0, 0],
 		[0, 0, 0],
@@ -295,22 +301,3 @@ export const PIXEL_3x4_LETTERS = {
 		[1, 1, 1]
 	]
 };
-
-export function addZerosAroundMatrix(matrix: number[][], padding = 1) {
-	const paddingZeroes = Array(padding).fill(0);
-
-	// prettier-ignore
-	return [
-		...paddingZeroes.map(() => [
-			...paddingZeroes,
-			...new Array(matrix[0].length).fill(0),
-			...paddingZeroes
-		]),
-		...matrix.map((row) => [...paddingZeroes, ...row, ...paddingZeroes]),
-		...paddingZeroes.map(() => [
-			...paddingZeroes,
-			...new Array(matrix[0].length).fill(0),
-			...paddingZeroes
-		])
-	];
-}
