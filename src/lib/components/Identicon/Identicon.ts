@@ -156,8 +156,11 @@ export default class Identicon {
 		}
 
 		if (symetry === 'central') {
-			const halfHeightData = data.slice(0, Math.ceil(data.length / 2));
-			data = [...halfHeightData, ...halfHeightData.reverse()];
+			const halfHeight = Math.ceil(data.length / 2);
+			const halfHeightData = data.slice(0, halfHeight);
+			const mirrorHeight = data.length - halfHeight;
+			const mirrorHeightData = data.slice(0, mirrorHeight);
+			data = [...halfHeightData, ...mirrorHeightData.reverse()];
 		}
 
 		return data;
