@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cousine:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Cousine:ital,wght@0,400;0,700;1,400;1,700&display=swap");
 
 :root {
 	--black: #22252b;
@@ -7,7 +7,7 @@
 html {
 	box-sizing: border-box;
 	font-weight: 400;
-	font-family: 'Space Mono', monospace;
+	font-family: "Space Mono", monospace;
 }
 
 body {
@@ -19,7 +19,7 @@ html,
 body {
 	overscroll-behavior: none;
 	/* font-family: Helvetica, arial, sans-serif; */
-	font-family: 'Cousine', monospace;
+	font-family: "Cousine", monospace;
 }
 
 *,
@@ -34,11 +34,12 @@ body {
 }
 
 input,
+select,
 button {
 	font-size: 16px;
 	padding: 9px 12px 6px;
 	border: none;
-	font-family: 'Cousine', monospace;
+	font-family: "Cousine", monospace;
 	height: 33px;
 }
 
@@ -57,7 +58,7 @@ button:hover {
 	background: goldenrod;
 }
 
-input[type='color'] {
+input[type="color"] {
 	cursor: pointer;
 	width: 40px;
 	padding: 0 2px;

@@ -1,5 +1,5 @@
-import { PIXEL_3x4_LETTERS } from '$lib/constants/pixel-letters.js';
-import { Random } from '../../helpers/Random.js';
+import { PIXEL_3x4_LETTERS } from "$lib/constants/pixel-letters.js";
+import { Random } from "../../helpers/Random.js";
 
 export interface IdenticonOptions {
 	seed?: string; // seed used to generate icon data, default: random
@@ -7,33 +7,33 @@ export interface IdenticonOptions {
 	height: number; // width/height of the icon in blocks, default: 10
 	width: number; // width/height of the icon in blocks, default: 10
 	pixelSize?: number; // width/height of each block in pixels, default: 5
-	shape?: 'circle' | 'square';
+	shape?: "circle" | "square";
 	numberOfColors?: number;
 	textBackgroundColor?: string;
 	textColor?: string;
-	symetry?: 'axial' | 'central' | 'none';
+	symetry?: "axial" | "central" | "none";
 	text?: string;
 	textPadding?: number;
 	textPosition?:
-		| 'top-center'
-		| 'top-left'
-		| 'top-right'
-		| 'bottom-center'
-		| 'bottom-left'
-		| 'bottom-right'
-		| 'center';
+		| "top-center"
+		| "top-left"
+		| "top-right"
+		| "bottom-center"
+		| "bottom-left"
+		| "bottom-right"
+		| "center";
 }
 
 export default class Identicon {
 	canvas: HTMLCanvasElement;
-	options: Required<Omit<IdenticonOptions, 'textBackgroundColor' | 'text'>> & {
+	options: Required<Omit<IdenticonOptions, "textBackgroundColor" | "text">> & {
 		textBackgroundColor?: string;
 		text?: string;
 	};
 	rand: Random;
 	public imageData: (string | undefined)[] = [];
 	LETTER_PADDING_COLOR: string | undefined;
-	LETTER_COLOR = '#fff';
+	LETTER_COLOR = "#fff";
 	backgroundColor: string;
 
 	constructor(canvas: HTMLCanvasElement, options: IdenticonOptions) {
@@ -53,11 +53,11 @@ export default class Identicon {
 
 		this.options = {
 			pixelSize: 4,
-			shape: 'square',
-			textColor: '#fff',
+			shape: "square",
+			textColor: "#fff",
 			textBackgroundColor: undefined,
-			symetry: 'axial',
-			textPosition: 'bottom-right',
+			symetry: "axial",
+			textPosition: "bottom-right",
 			textPadding: 1,
 			...options,
 			text: options.text?.trim() || undefined,
@@ -125,7 +125,7 @@ export default class Identicon {
 			let row = [];
 
 			for (let x = 0; x < dataWidth; x++) {
-				if (symetry === 'axial' || symetry === 'central') {
+				if (symetry === "axial" || symetry === "central") {
 					if (x >= halfWidth) {
 						break;
 					}
@@ -144,7 +144,7 @@ export default class Identicon {
 				row[x] = color;
 			}
 
-			if (symetry === 'axial' || symetry === 'central') {
+			if (symetry === "axial" || symetry === "central") {
 				// Create the mirror part of the row by taking the original row data, slicing it,
 				// and reversing the order. This creates the mirror effect.
 				const r = row.slice(0, mirrorDataWidth).reverse();
@@ -155,7 +155,7 @@ export default class Identicon {
 			data = [...data, ...row];
 		}
 
-		if (symetry === 'central') {
+		if (symetry === "central") {
 			const halfHeight = Math.ceil(data.length / 2);
 			const halfHeightData = data.slice(0, halfHeight);
 			const mirrorHeight = data.length - halfHeight;
@@ -171,31 +171,31 @@ export default class Identicon {
 		let top = 0;
 		let left = 0;
 		switch (textPosition) {
-			case 'top-left':
+			case "top-left":
 				top = 0;
 				left = 0;
 				break;
-			case 'top-right':
+			case "top-right":
 				top = 0;
 				left = width - textMatrix[0].length;
 				break;
-			case 'top-center':
+			case "top-center":
 				top = 0;
 				left = Math.floor((width - textMatrix[0].length) / 2);
 				break;
-			case 'bottom-left':
+			case "bottom-left":
 				top = height - textMatrix.length;
 				left = 0;
 				break;
-			case 'bottom-center':
+			case "bottom-center":
 				top = height - textMatrix.length;
 				left = Math.floor((width - textMatrix[0].length) / 2);
 				break;
-			case 'bottom-right':
+			case "bottom-right":
 				top = height - textMatrix.length;
 				left = width - textMatrix[0].length;
 				break;
-			case 'center':
+			case "center":
 				top = Math.floor((height - textMatrix.length) / 2);
 				left = Math.floor((width - textMatrix[0].length) / 2);
 				break;
@@ -239,9 +239,9 @@ export default class Identicon {
 
 		if (text) {
 			// Add letter data to image data
-			let textMatrix = text.split('').reduce<number[][]>(
+			let textMatrix = text.split("").reduce<number[][]>(
 				(acc, letter) => {
-					const letterMatrix = PIXEL_3x4_LETTERS[letter.toUpperCase() as 'A'];
+					const letterMatrix = PIXEL_3x4_LETTERS[letter.toUpperCase() as "A"];
 
 					if (!letterMatrix) {
 						return acc;
@@ -279,7 +279,7 @@ export default class Identicon {
 					if (letterValue === 0) {
 						if (textBackgroundColor) {
 							this.imageData[imageDataIndex] =
-								textBackgroundColor === 'main' ? colors[0] : textBackgroundColor;
+								textBackgroundColor === "main" ? colors[0] : textBackgroundColor;
 						}
 					} else {
 						this.imageData[imageDataIndex] = textColor;
@@ -291,7 +291,7 @@ export default class Identicon {
 		this.canvas.width = width * pixelSize;
 		this.canvas.height = height * pixelSize;
 
-		const cc = this.canvas.getContext('2d');
+		const cc = this.canvas.getContext("2d");
 
 		if (!cc) {
 			return;
@@ -313,10 +313,10 @@ export default class Identicon {
 
 			cc.fillStyle = color;
 
-			if (shape === 'square') {
+			if (shape === "square") {
 				// Draw a square
 				cc.fillRect(col * pixelSize, row * pixelSize, pixelSize, pixelSize);
-			} else if (shape === 'circle') {
+			} else if (shape === "circle") {
 				// Draw a circle
 				cc.beginPath();
 				cc.arc(

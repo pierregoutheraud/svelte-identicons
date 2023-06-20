@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
-	import type { IdenticonOptions } from '$lib/components/Identicon/Identicon.js';
-	import Identicon from '$lib/components/Identicon/Identicon.svelte';
-	import { generatePseudoWord } from '$lib/helpers/general.helpers.js';
-	import IdenticonItem, { type Params } from './IdenticonItem.svelte';
-	import './global.css';
+	import { browser } from "$app/environment";
+	import { goto } from "$app/navigation";
+	import { page } from "$app/stores";
+	import type { IdenticonOptions } from "$lib/components/Identicon/Identicon.js";
+	import Identicon from "$lib/components/Identicon/Identicon.svelte";
+	import { generatePseudoWord } from "$lib/helpers/general.helpers.js";
+	import IdenticonItem, { type Params } from "./IdenticonItem.svelte";
+	import "./global.css";
 
 	let params: Params = parseParams($page.url.searchParams);
 	let prevParams: Params | undefined = undefined;
@@ -17,15 +17,17 @@
 
 	function parseParams(params: URLSearchParams): Params {
 		return {
-			seed: params.get('seed') || generateSeed(),
-			text: params.get('text') || '',
-			numberOfColors: parseInt(params.get('numberOfColors') || '2'),
-			height: parseInt(params.get('height') || '10'),
-			width: parseInt(params.get('width') || '10'),
-			pixelSize: parseInt(params.get('pixelSize') || '10'),
-			colors: params.get('colors')?.length ? params.get('colors')!.split(',') : [],
-			symetry: (params.get('symetry') || 'axial') as IdenticonOptions['symetry'],
-			textColor: '#ffffff'
+			seed: params.get("seed") || generateSeed(),
+			text: params.get("text") || "",
+			numberOfColors: parseInt(params.get("numberOfColors") || "2"),
+			height: parseInt(params.get("height") || "10"),
+			width: parseInt(params.get("width") || "10"),
+			pixelSize: parseInt(params.get("pixelSize") || "10"),
+			colors: params.get("colors")?.length ? params.get("colors")!.split(",") : [],
+			symetry: (params.get("symetry") || "axial") as IdenticonOptions["symetry"],
+			textColor: "#ffffff",
+			textPosition:
+				(params.get("textPosition") as IdenticonOptions["textPosition"]) || "bottom-right"
 		};
 	}
 
@@ -33,12 +35,13 @@
 		const newQueryParams = new URLSearchParams({
 			seed: params.seed,
 			text: params.text,
-			numberOfColors: params.colors.length ? '' : params.numberOfColors.toString(),
-			height: params.height?.toString() || '1',
-			width: params.width?.toString() || '1',
+			numberOfColors: params.colors.length ? "" : params.numberOfColors.toString(),
+			height: params.height?.toString() || "1",
+			width: params.width?.toString() || "1",
 			symetry: params.symetry as string,
-			colors: params.colors.join(','),
-			textColor: params.textColor
+			colors: params.colors.join(","),
+			textColor: params.textColor,
+			textPosition: params.textPosition as string
 		});
 		return `?${newQueryParams.toString()}`;
 	}
@@ -62,28 +65,28 @@
 	}
 
 	function handleDownload() {
-		var link = document.createElement('a');
-		link.download = 'filename.png';
+		var link = document.createElement("a");
+		link.download = "filename.png";
 		link.href = canvasElement.toDataURL();
 		link.click();
 	}
 
 	async function handleCopyLink(params: Params) {
-		await navigator.clipboard.writeText(window.location.origin + '/' + createUrl(params));
-		window.alert('Url copied!');
+		await navigator.clipboard.writeText(window.location.origin + "/" + createUrl(params));
+		window.alert("Url copied!");
 	}
 
 	function handleAddColor() {
 		if (!params.colors.length) {
 			params = {
 				...params,
-				colors: ['#ffffff', '#000000']
+				colors: ["#ffffff", "#000000"]
 			};
 			return;
 		}
 		params = {
 			...params,
-			colors: [...params.colors, '#000000']
+			colors: [...params.colors, "#000000"]
 		};
 	}
 
@@ -176,41 +179,43 @@
 			</div>
 		</div>
 
-		{#if !params.colors.length}
-			<div class="fieldset">
-				<label class="input-field">
-					<p>Number of colors</p>
-					<input
-						type="number"
-						value={params.numberOfColors}
-						min="2"
-						max="10"
-						on:input={(e) => handleChangeInputNumber(e, 'numberOfColors')}
-					/>
-				</label>
-			</div>
-		{/if}
-
-		<div class="fieldset fieldset-colors">
-			<p>Custom colors</p>
-			{#if params.colors}
-				<div class="colors">
-					{#each params.colors as color, i}
-						<div class="color">
-							<p>{color}</p>
-							<input
-								type="color"
-								id="head"
-								name="head"
-								value={color}
-								on:change={(e) => handleChangeColor(i, e)}
-							/>
-							<button on:click={() => handleRemoveColor(i)}>Remove</button>
-						</div>
-					{/each}
+		<div class="fieldsets-row">
+			{#if !params.colors.length}
+				<div class="fieldset">
+					<label class="input-field">
+						<p>Number of colors</p>
+						<input
+							type="number"
+							value={params.numberOfColors}
+							min="2"
+							max="10"
+							on:input={(e) => handleChangeInputNumber(e, "numberOfColors")}
+						/>
+					</label>
 				</div>
 			{/if}
-			<button on:click={handleAddColor}>Add</button>
+
+			<div class="fieldset fieldset-colors">
+				<p>Custom colors</p>
+				{#if params.colors?.length}
+					<div class="colors">
+						{#each params.colors as color, i}
+							<div class="color">
+								<p>{color}</p>
+								<input
+									type="color"
+									id="head"
+									name="head"
+									value={color}
+									on:change={(e) => handleChangeColor(i, e)}
+								/>
+								<button on:click={() => handleRemoveColor(i)}>Remove</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
+				<button on:click={handleAddColor}>Add</button>
+			</div>
 		</div>
 
 		<div class="fieldsets-row">
@@ -222,7 +227,7 @@
 						value={params.height}
 						min="1"
 						max="100"
-						on:input={(e) => handleChangeInputNumber(e, 'height')}
+						on:input={(e) => handleChangeInputNumber(e, "height")}
 					/>
 					<!-- <input type="range" bind:value={params.height} min="1" max="500" /> -->
 				</label>
@@ -236,7 +241,7 @@
 						value={params.width}
 						min="1"
 						max="100"
-						on:input={(e) => handleChangeInputNumber(e, 'width')}
+						on:input={(e) => handleChangeInputNumber(e, "width")}
 					/>
 					<!-- <input type="range" bind:value={params.width} min="1" max="500" /> -->
 				</label>
@@ -250,7 +255,7 @@
 						value={params.pixelSize}
 						min="1"
 						max="100"
-						on:input={(e) => handleChangeInputNumber(e, 'pixelSize')}
+						on:input={(e) => handleChangeInputNumber(e, "pixelSize")}
 					/>
 					<!-- <input type="range" bind:value={params.pixelSize} min="1" max="100" /> -->
 				</label>
@@ -272,31 +277,46 @@
 				</label>
 			</div>
 
-			<div class="fieldset fieldset-radio">
-				<p>Symetry</p>
-				<div>
-					<label class="radio">
-						<input type="radio" bind:group={params.symetry} name="symetry" value="axial" />
-						<p>Axial</p>
-					</label>
+			<div class="fieldset">
+				<label class="input-field">
+					<p>Text position</p>
+					<select bind:value={params.textPosition}>
+						<option value="top-center">Top center</option>
+						<option value="top-left">Top left</option>
+						<option value="top-right">Top right</option>
+						<option value="bottom-center">Bottom center</option>
+						<option value="bottom-left">Bottom left</option>
+						<option value="bottom-right">Bottom right</option>
+						<option value="center">Center</option>
+					</select>
+				</label>
+			</div>
+		</div>
 
-					<label class="radio">
-						<input
-							id="symetry-central"
-							type="radio"
-							bind:group={params.symetry}
-							name="symetry"
-							value="central"
-						/>
-						<p>Central</p>
-					</label>
-				</div>
+		<div class="fieldset fieldset-radio">
+			<p>Symetry</p>
+			<div>
+				<label class="radio">
+					<input type="radio" bind:group={params.symetry} name="symetry" value="axial" />
+					<p>Axial</p>
+				</label>
+
+				<label class="radio">
+					<input
+						id="symetry-central"
+						type="radio"
+						bind:group={params.symetry}
+						name="symetry"
+						value="central"
+					/>
+					<p>Central</p>
+				</label>
 			</div>
 		</div>
 	</div>
 
 	<div class="item">
-		<IdenticonItem {params} />
+		<IdenticonItem {params} {createUrl} />
 	</div>
 
 	{#if history.length}
@@ -304,7 +324,7 @@
 			<h2>History</h2>
 			{#each history as params}
 				<div class="item">
-					<IdenticonItem {params} />
+					<IdenticonItem {params} {createUrl} />
 				</div>
 			{/each}
 		</div>
@@ -354,7 +374,8 @@
 		justify-content: space-between;
 	}
 
-	.fieldset button {
+	.fieldset button,
+	.fieldset select {
 		margin-left: auto;
 	}
 

@@ -6,44 +6,32 @@
 		height: number;
 		width: number;
 		pixelSize: number;
-		symetry: IdenticonOptions['symetry'];
+		symetry: IdenticonOptions["symetry"];
 		colors: string[];
 		textColor: string;
+		textPosition: IdenticonOptions["textPosition"];
 	}
 </script>
 
 <script lang="ts">
-	import type { IdenticonOptions } from '$lib/components/Identicon/Identicon.js';
-	import Identicon from '$lib/components/Identicon/Identicon.svelte';
-	import Code from './Code.svelte';
+	import type { IdenticonOptions } from "$lib/components/Identicon/Identicon.js";
+	import Identicon from "$lib/components/Identicon/Identicon.svelte";
+	import Code from "./Code.svelte";
 
+	export let createUrl: (params: Params) => string;
 	export let params: Params;
 	let canvasElement: HTMLCanvasElement;
 
 	function handleDownload() {
-		var link = document.createElement('a');
-		link.download = 'filename.png';
+		var link = document.createElement("a");
+		link.download = "filename.png";
 		link.href = canvasElement.toDataURL();
 		link.click();
 	}
 
-	function createUrl(params: Params): string {
-		const newQueryParams = new URLSearchParams({
-			seed: params.seed,
-			text: params.text,
-			numberOfColors: params.colors.length ? '' : params.numberOfColors.toString(),
-			height: params.height?.toString() || '1',
-			width: params.width?.toString() || '1',
-			symetry: params.symetry as string,
-			colors: params.colors.join(','),
-			textColor: params.textColor
-		});
-		return `?${newQueryParams.toString()}`;
-	}
-
 	async function handleCopyLink(params: Params) {
-		await navigator.clipboard.writeText(window.location.origin + '/' + createUrl(params));
-		window.alert('Url copied!');
+		await navigator.clipboard.writeText(window.location.origin + "/" + createUrl(params));
+		window.alert("Url copied!");
 	}
 </script>
 
@@ -58,6 +46,7 @@
 		symetry={params.symetry}
 		text={params.text.length ? params.text : undefined}
 		textColor={params.textColor}
+		textPosition={params.textPosition}
 		bind:canvasElement
 	/>
 	<div class="actions">
