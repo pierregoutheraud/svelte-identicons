@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Params } from './IdenticonItem.svelte';
+	import type { Params } from "./IdenticonItem.svelte";
 
 	export let params: Params;
 
@@ -20,7 +20,7 @@
 
 	async function handleClick() {
 		await navigator.clipboard.writeText(code);
-		window.alert('Code copied!');
+		window.alert("Code copied!");
 	}
 </script>
 
