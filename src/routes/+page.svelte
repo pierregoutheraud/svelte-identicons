@@ -151,6 +151,9 @@
 			textPadding={2}
 			textPosition="center"
 		/>
+		<a href="https://github.com/pierregoutheraud/svelte-identicons" target="_blank">
+			Github repository
+		</a>
 	</div>
 
 	<div class="filters">
@@ -316,6 +319,21 @@
 		gap: 50px;
 		width: 800px;
 		margin: 40px auto;
+	}
+
+	.logo {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 16px;
+	}
+
+	.logo a {
+		color: white;
+		text-decoration: underline;
+	}
+	.logo a:hover {
+		text-decoration: none;
 	}
 
 	.filters {
