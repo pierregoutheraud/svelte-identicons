@@ -7,11 +7,11 @@
 	export let seed: string;
 	export let shape: "square" | "circle" = "square";
 	export let text: string | undefined = undefined;
-	export let numberOfColors = 1;
+	export let numberOfColors = 2;
 	export let canvasElement: HTMLCanvasElement | undefined = undefined;
 	export let colors: string[] | undefined = undefined;
 	export let symetry: "axial" | "central" | "none" | undefined = "axial";
-	export let textColor: string | undefined;
+	export let textColor: string | undefined = undefined;
 	export let textBackgroundColor: string | undefined = undefined;
 	export let textPosition: IdenticonOptions["textPosition"] = "bottom-right";
 	export let textPadding: number = 1;
