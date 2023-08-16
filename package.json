@@ -2,7 +2,7 @@
 	"name": "svelte-identicons",
 	"repository": "github:pierregoutheraud/svelte-identicons",
 	"homepage": "https://svelte-identicons.vercel.app/",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"description": "Svelte component to generate identicons",
 	"keywords": [
 		"svelte",
