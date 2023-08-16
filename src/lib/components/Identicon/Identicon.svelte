@@ -14,7 +14,8 @@
 	export let textColor: string | undefined = undefined;
 	export let textBackgroundColor: string | undefined = undefined;
 	export let textPosition: IdenticonOptions["textPosition"] = "bottom-right";
-	export let textPadding: number = 1;
+	export let textPadding = 1;
+	export let onColors: ((colors: string[]) => void) | undefined = undefined;
 
 	let widthInPixels: number | undefined = undefined;
 	let heightInPixels: number | undefined = undefined;
@@ -36,7 +37,8 @@
 			textPosition,
 			textColor: textColor || "#ffffff",
 			textBackgroundColor,
-			textPadding
+			textPadding,
+			onColors
 		});
 	}
 </script>

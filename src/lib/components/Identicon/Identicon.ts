@@ -1,4 +1,5 @@
 import { PIXEL_3x4_LETTERS } from "$lib/constants/pixel-letters.js";
+import { hslToHex } from "$lib/helpers/colors.helpers.js";
 import { Random } from "../../helpers/Random.js";
 
 export interface IdenticonOptions {
@@ -22,6 +23,7 @@ export interface IdenticonOptions {
 		| "bottom-left"
 		| "bottom-right"
 		| "center";
+	onColors: ((colors: string[]) => void) | undefined;
 }
 
 export default class Identicon {
@@ -44,9 +46,11 @@ export default class Identicon {
 
 		const numberOfColors = options.numberOfColors || 1;
 
-		const defaultColors = [...new Array(numberOfColors)].map(() =>
-			this.hslToString(this.createHslColor())
-		);
+		const defaultColors = [...new Array(numberOfColors)].map(() => {
+			const hsl = this.createHslColor();
+			const hex = hslToHex(hsl[0], hsl[1], hsl[2]);
+			return hex;
+		});
 		const colors = options.colors?.length ? options.colors : defaultColors;
 
 		this.backgroundColor = colors[0];
@@ -65,6 +69,8 @@ export default class Identicon {
 			colors,
 			seed
 		};
+
+		this.options.onColors?.(colors);
 
 		this.render();
 	}
