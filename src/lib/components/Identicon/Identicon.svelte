@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Identicon, { type IdenticonOptions } from "./Identicon.js";
+	import Identicon, { type IdenticonOptions } from "../../engine/Identicon.js";
 
 	export let height: number; // height in blocks
 	export let width: number; // width in blocks
@@ -11,8 +11,9 @@
 	export let canvasElement: HTMLCanvasElement | undefined = undefined;
 	export let colors: string[] | undefined = undefined;
 	export let symetry: "axial" | "central" | "none" | undefined = "axial";
-	export let textColor: string | undefined = undefined;
-	export let textBackgroundColor: string | undefined = undefined;
+	export let textColor: IdenticonOptions["textColor"] = undefined;
+	export let textBackgroundColor: IdenticonOptions["textBackgroundColor"] =
+		undefined;
 	export let textPosition: IdenticonOptions["textPosition"] = "bottom-right";
 	export let textPadding = 1;
 	export let onColors: ((colors: string[]) => void) | undefined = undefined;
@@ -35,7 +36,7 @@
 			symetry,
 			text,
 			textPosition,
-			textColor: textColor || "#ffffff",
+			textColor,
 			textBackgroundColor,
 			textPadding,
 			onColors

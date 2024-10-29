@@ -1,6 +1,6 @@
 import { PIXEL_3x4_LETTERS } from "$lib/constants/pixel-letters.js";
 import { hslToHex } from "$lib/helpers/colors.helpers.js";
-import { Random } from "../../helpers/Random.js";
+import { Random } from "./Random.js";
 
 export interface IdenticonOptions {
 	seed?: string; // seed used to generate icon data, default: random
@@ -8,10 +8,10 @@ export interface IdenticonOptions {
 	height: number; // width/height of the icon in blocks, default: 10
 	width: number; // width/height of the icon in blocks, default: 10
 	pixelSize?: number; // width/height of each block in pixels, default: 5
-	shape?: "circle" | "square";
+	shape?: "circle" | "square" | "polygon";
 	numberOfColors?: number;
-	textBackgroundColor?: string;
-	textColor?: string;
+	textBackgroundColor?: number | string;
+	textColor?: number | string;
 	symetry?: "axial" | "central" | "none";
 	text?: string;
 	textPadding?: number;
@@ -41,7 +41,8 @@ export default class Identicon {
 	constructor(canvas: HTMLCanvasElement, options: IdenticonOptions) {
 		this.canvas = canvas;
 
-		const seed = options.seed || Math.floor(Math.random() * Math.pow(10, 16)).toString(16);
+		const seed =
+			options.seed || Math.floor(Math.random() * Math.pow(10, 16)).toString(16);
 		this.rand = new Random(seed);
 
 		const numberOfColors = options.numberOfColors || 1;
@@ -55,15 +56,25 @@ export default class Identicon {
 
 		this.backgroundColor = colors[0];
 
+		const textBackgroundColor =
+			typeof options.textBackgroundColor === "number"
+				? colors[options.textBackgroundColor]
+				: options.textBackgroundColor;
+
+		const textColor =
+			typeof options.textColor === "number"
+				? colors[options.textColor]
+				: options.textColor;
+
 		this.options = {
 			pixelSize: 4,
 			shape: "square",
-			textColor: "#fff",
-			textBackgroundColor: undefined,
 			symetry: "axial",
 			textPosition: "bottom-right",
 			textPadding: 1,
 			...options,
+			textBackgroundColor: textBackgroundColor ?? undefined,
+			textColor: textColor ?? "#fff",
 			text: options.text?.trim() || undefined,
 			numberOfColors: colors.length,
 			colors,
@@ -85,9 +96,80 @@ export default class Identicon {
 		//saturation goes from 40 to 100, it avoids greyish colors
 		const s = this.rand.next() * 60 + 40;
 		//lightness can be anything from 0 to 100, but probabilities are a bell curve around 50%
-		const l = (this.rand.next() + this.rand.next() + this.rand.next() + this.rand.next()) * 25;
+		const l =
+			(this.rand.next() +
+				this.rand.next() +
+				this.rand.next() +
+				this.rand.next()) *
+			25;
 
 		return [h, s, l];
+	}
+
+	calculateThresholds(numColors: number) {
+		const thresholds = new Array(numColors);
+		let total = 0;
+
+		// Calculate initial probabilities using geometric progression
+		// Each color gets half the probability of the previous color
+		for (let i = 0; i < numColors; i++) {
+			thresholds[i] = Math.pow(0.5, i);
+			total += thresholds[i];
+		}
+
+		// Normalize probabilities to sum to 1
+		let accumulator = 0;
+		for (let i = 0; i < numColors; i++) {
+			thresholds[i] = thresholds[i] / total;
+			accumulator += thresholds[i];
+			thresholds[i] = accumulator;
+		}
+
+		return thresholds;
+	}
+
+	// Alternative using arithmetic progression
+	calculateThresholdsArithmetic(numColors: number) {
+		const thresholds = new Array(numColors);
+		let total = 0;
+
+		// Calculate initial probabilities using arithmetic progression
+		// Each color gets a linearly decreasing probability
+		for (let i = 0; i < numColors; i++) {
+			thresholds[i] = numColors - i;
+			total += thresholds[i];
+		}
+
+		// Normalize probabilities to sum to 1
+		let accumulator = 0;
+		for (let i = 0; i < numColors; i++) {
+			thresholds[i] = thresholds[i] / total;
+			accumulator += thresholds[i];
+			thresholds[i] = accumulator;
+		}
+
+		return thresholds;
+	}
+
+	calculateColorsWeights(colorsCount: number) {
+		// Blockies original probabilities: 43.5% + 43.5% + 13% = 100%
+		// New weights system = [0.5, 0.25, 0.125...]
+		// The weights are not probabilities or percentage, they are the actual weights
+		// then we pick a number between 0 and 0.875 (0.5+0.25+0.125)
+		// if r < 0.5, we pick the first color,
+		// if r < 0.75, we pick the second color
+		// else we pick the third color (r < 0.875)
+		//
+
+		const value = 0.5;
+		let n = 1;
+		const weights = [...new Array(colorsCount)].reduce((acc) => {
+			const p = n * value;
+			n = n - p;
+			return [...acc, p];
+		}, []);
+
+		return weights;
 	}
 
 	// This function creates an array of data for an image, which should be displayed as a symmetric (mirrored) pattern.
@@ -108,22 +190,11 @@ export default class Identicon {
 		// Initialize an empty array to store the image data.
 		let data: (string | undefined)[] = [];
 
-		// if 3 colors, probabilities will be:
-		// 100 * 0.6 -> 60
-		// 40 * 0.6 -> 24
-		// Last value the rest (100 - (60+24)) = 16
-		let n = 100;
-		const probabilities = [...new Array(colors.length)]
-			.reduce((acc, color, i) => {
-				if (i === colors.length - 1) {
-					return [...acc, n];
-				}
-				const p = n * 0.6;
-				n -= p;
-				return [...acc, p];
-			}, [])
-			// We start from the smallest probability
-			.reverse();
+		const weights = this.calculateColorsWeights(colors.length);
+		const thresholds = this.calculateThresholds(colors.length);
+		console.log("Identicon | thresholds", thresholds);
+
+		const colorsCount = Array(colors.length).fill(0);
 
 		// Loop through each pixel row.
 		for (let y = 0; y < height; y++) {
@@ -137,17 +208,22 @@ export default class Identicon {
 					}
 				}
 
-				let color = undefined;
+				// With weights
+				const color = this.rand.pickRandomChoice(colors, weights);
 
-				for (let i = 0; i < colors.length; i++) {
-					const proba = probabilities[i];
-					color = colors[colors.length - 1 - i];
-					if (this.rand.next() * 100 < proba) {
-						break;
-					}
-				}
+				// With thresholds
+				// const r = this.rand.next();
+				// // Find the appropriate color based on the random value
+				// let color: string;
+				// for (let i = 0; i < thresholds.length; i++) {
+				// 	if (r <= thresholds[i]) {
+				// 		color = colors[i];
+				// 		break;
+				// 	}
+				// }
 
 				row[x] = color;
+				colorsCount[colors.indexOf(color)]++;
 			}
 
 			if (symetry === "axial" || symetry === "central") {
@@ -228,6 +304,33 @@ export default class Identicon {
 		];
 	}
 
+	drawPolygon(
+		ctx: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		radius: number,
+		sides: number
+	) {
+		if (sides < 3) return; // Polygon must have at least 3 sides
+
+		ctx.beginPath();
+		const angleStep = (2 * Math.PI) / sides;
+
+		for (let i = 0; i < sides; i++) {
+			const angle = i * angleStep;
+			const dx = x + radius * Math.cos(angle);
+			const dy = y + radius * Math.sin(angle);
+			if (i === 0) {
+				ctx.moveTo(dx, dy);
+			} else {
+				ctx.lineTo(dx, dy);
+			}
+		}
+
+		ctx.closePath();
+		ctx.fill();
+	}
+
 	render() {
 		const {
 			height,
@@ -283,12 +386,13 @@ export default class Identicon {
 					const letterValue = textMatrix[letterY][letterX];
 
 					if (letterValue === 0) {
-						if (textBackgroundColor) {
-							this.imageData[imageDataIndex] =
-								textBackgroundColor === "main" ? colors[0] : textBackgroundColor;
+						if (textBackgroundColor !== undefined) {
+							this.imageData[imageDataIndex] = textBackgroundColor;
 						}
 					} else {
-						this.imageData[imageDataIndex] = textColor;
+						const color =
+							typeof textColor === "number" ? colors[textColor] : textColor;
+						this.imageData[imageDataIndex] = color;
 					}
 				}
 			}
@@ -325,14 +429,24 @@ export default class Identicon {
 			} else if (shape === "circle") {
 				// Draw a circle
 				cc.beginPath();
+				// const radius = this.rand.nextRange(0.1, pixelSize / 2);
+				const radius = pixelSize / 2;
 				cc.arc(
 					col * pixelSize + pixelSize / 2,
 					row * pixelSize + pixelSize / 2,
-					pixelSize / 2,
+					radius,
 					0,
 					2 * Math.PI
 				);
 				cc.fill();
+			} else if (shape === "polygon") {
+				this.drawPolygon(
+					cc,
+					col * pixelSize + pixelSize / 2,
+					row * pixelSize + pixelSize / 2,
+					pixelSize / 2,
+					this.rand.nextRange(3, 20)
+				);
 			}
 		}
 

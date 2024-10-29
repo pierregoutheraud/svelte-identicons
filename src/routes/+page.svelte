@@ -2,7 +2,7 @@
 	import { browser } from "$app/environment";
 	import { goto } from "$app/navigation";
 	import { page } from "$app/stores";
-	import type { IdenticonOptions } from "$lib/components/Identicon/Identicon.js";
+	import type { IdenticonOptions } from "$lib/engine/Identicon.js";
 	import Identicon from "$lib/components/Identicon/Identicon.svelte";
 	import { generatePseudoWord } from "$lib/helpers/general.helpers.js";
 	import IdenticonItem, { type Params } from "./IdenticonItem.svelte";
@@ -23,11 +23,15 @@
 			height: parseInt(params.get("height") || "10"),
 			width: parseInt(params.get("width") || "10"),
 			pixelSize: parseInt(params.get("pixelSize") || "10"),
-			colors: params.get("colors")?.length ? params.get("colors")!.split(",") : [],
-			symetry: (params.get("symetry") || "axial") as IdenticonOptions["symetry"],
+			colors: params.get("colors")?.length
+				? params.get("colors")!.split(",")
+				: [],
+			symetry: (params.get("symetry") ||
+				"axial") as IdenticonOptions["symetry"],
 			textColor: "#ffffff",
 			textPosition:
-				(params.get("textPosition") as IdenticonOptions["textPosition"]) || "bottom-right"
+				(params.get("textPosition") as IdenticonOptions["textPosition"]) ||
+				"bottom-right"
 		};
 	}
 
@@ -35,7 +39,9 @@
 		const newQueryParams = new URLSearchParams({
 			seed: params.seed,
 			text: params.text,
-			numberOfColors: params.colors.length ? "" : params.numberOfColors.toString(),
+			numberOfColors: params.colors.length
+				? ""
+				: params.numberOfColors.toString(),
 			height: params.height?.toString() || "1",
 			width: params.width?.toString() || "1",
 			symetry: params.symetry as string,
@@ -72,7 +78,9 @@
 	}
 
 	async function handleCopyLink(params: Params) {
-		await navigator.clipboard.writeText(window.location.origin + "/" + createUrl(params));
+		await navigator.clipboard.writeText(
+			window.location.origin + "/" + createUrl(params)
+		);
 		window.alert("Url copied!");
 	}
 
@@ -149,12 +157,15 @@
 			numberOfColors={2}
 			symetry="central"
 			text="svelte-identicons"
-			textBackgroundColor="main"
+			textBackgroundColor={0}
 			textColor="#ffffff"
 			textPadding={2}
 			textPosition="center"
 		/>
-		<a href="https://github.com/pierregoutheraud/svelte-identicons" target="_blank">
+		<a
+			href="https://github.com/pierregoutheraud/svelte-identicons"
+			target="_blank"
+		>
 			Github repository
 		</a>
 	</div>
@@ -297,7 +308,12 @@
 			<p>Symetry</p>
 			<div>
 				<label class="radio">
-					<input type="radio" bind:group={params.symetry} name="symetry" value="axial" />
+					<input
+						type="radio"
+						bind:group={params.symetry}
+						name="symetry"
+						value="axial"
+					/>
 					<p>Axial</p>
 				</label>
 
