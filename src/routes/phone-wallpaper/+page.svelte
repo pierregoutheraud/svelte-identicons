@@ -56,6 +56,13 @@
 	}
 </script>
 
+<svelte:head>
+	<meta
+		name="viewport"
+		content="width=device-width, initial-scale=1, maximum-scale=1"
+	/>
+</svelte:head>
+
 <main class="main">
 	<div class="form">
 		<div class="row">
@@ -72,7 +79,7 @@
 					bind:value={numberOfColors}
 					placeholder="Number of colors"
 				/>
-				<button on:click={handleClickCustomColors}>Custom colors</button>
+				<button on:click={handleClickCustomColors}>Custom</button>
 			</div>
 		{/if}
 
