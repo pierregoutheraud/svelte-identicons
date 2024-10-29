@@ -5,8 +5,9 @@
 	import type { IdenticonOptions } from "$lib/engine/Identicon.js";
 	import Identicon from "$lib/components/Identicon/Identicon.svelte";
 	import { generatePseudoWord } from "$lib/helpers/general.helpers.js";
-	import IdenticonItem, { type Params } from "./IdenticonItem.svelte";
-	import "./global.css";
+	import IdenticonItem, {
+		type Params
+	} from "../components/IdenticonItem.svelte";
 
 	let params: Params = parseParams($page.url.searchParams);
 	let prevParams: Params | undefined = undefined;

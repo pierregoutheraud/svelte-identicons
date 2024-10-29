@@ -14,8 +14,8 @@
 </script>
 
 <script lang="ts">
-	import type { IdenticonOptions } from "$lib/components/Identicon/Identicon.js";
 	import Identicon from "$lib/components/Identicon/Identicon.svelte";
+	import { type IdenticonOptions } from "$lib/engine/Identicon.js";
 	import Code from "./Code.svelte";
 
 	export let createUrl: (params: Params) => string;
@@ -30,7 +30,9 @@
 	}
 
 	async function handleCopyLink(params: Params) {
-		await navigator.clipboard.writeText(window.location.origin + "/" + createUrl(params));
+		await navigator.clipboard.writeText(
+			window.location.origin + "/" + createUrl(params)
+		);
 		window.alert("Url copied!");
 	}
 </script>
