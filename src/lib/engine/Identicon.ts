@@ -191,8 +191,7 @@ export default class Identicon {
 		let data: (string | undefined)[] = [];
 
 		const weights = this.calculateColorsWeights(colors.length);
-		const thresholds = this.calculateThresholds(colors.length);
-		console.log("Identicon | thresholds", thresholds);
+		// const thresholds = this.calculateThresholds(colors.length);
 
 		const colorsCount = Array(colors.length).fill(0);
 
