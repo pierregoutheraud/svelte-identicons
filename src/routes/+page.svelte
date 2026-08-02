@@ -32,7 +32,9 @@
 			textColor: "#ffffff",
 			textPosition:
 				(params.get("textPosition") as IdenticonOptions["textPosition"]) ||
-				"bottom-right"
+				"bottom-right",
+			textFont:
+				(params.get("textFont") as IdenticonOptions["textFont"]) || "3x4"
 		};
 	}
 
@@ -48,7 +50,8 @@
 			symetry: params.symetry as string,
 			colors: params.colors.join(","),
 			textColor: params.textColor,
-			textPosition: params.textPosition as string
+			textPosition: params.textPosition as string,
+			textFont: params.textFont as string
 		});
 		return `?${newQueryParams.toString()}`;
 	}
@@ -303,7 +306,24 @@
 					</select>
 				</label>
 			</div>
+
+			<div class="fieldset">
+				<label class="input-field">
+					<p>Text font</p>
+					<select bind:value={params.textFont}>
+						<option value="3x4">3x4</option>
+						<option value="3x3">3x3</option>
+					</select>
+				</label>
+			</div>
 		</div>
+
+		{#if params.textFont === "3x3" && /[^a-zA-Z]/.test(params.text)}
+			<p class="note">
+				The 3x3 font only has A-Z. Characters it is missing are dropped from the
+				overlay.
+			</p>
+		{/if}
 
 		<div class="fieldset fieldset-radio">
 			<p>Symetry</p>
@@ -354,7 +374,7 @@
 		align-items: center;
 		flex-direction: column;
 		gap: 50px;
-		width: 800px;
+		width: 900px;
 		margin: 40px auto;
 	}
 
@@ -413,6 +433,14 @@
 	}
 	.input-field input:first-of-type {
 		flex: 1;
+	}
+
+	.note {
+		font-size: 13px;
+		line-height: 1.5;
+		color: #22252b;
+		background: gold;
+		padding: 8px 12px;
 	}
 
 	.fieldsets-row {

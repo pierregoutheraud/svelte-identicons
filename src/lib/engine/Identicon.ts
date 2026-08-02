@@ -1,6 +1,18 @@
-import { PIXEL_3x4_LETTERS } from "$lib/constants/pixel-letters.js";
+import {
+	PIXEL_3x3_LETTERS,
+	PIXEL_3x4_LETTERS
+} from "$lib/constants/pixel-letters.js";
 import { hslToHex } from "$lib/helpers/colors.helpers.js";
 import { Random } from "./Random.js";
+
+export type TextFont = "3x3" | "3x4";
+
+// 3x4 carries digits, punctuation and a space; 3x3 is letters only, and any
+// character a font is missing is dropped from the overlay.
+const TEXT_FONTS: Record<TextFont, Record<string, number[][] | undefined>> = {
+	"3x3": PIXEL_3x3_LETTERS,
+	"3x4": PIXEL_3x4_LETTERS
+};
 
 export interface IdenticonOptions {
 	seed?: string; // seed used to generate icon data, default: random
@@ -14,6 +26,7 @@ export interface IdenticonOptions {
 	textColor?: number | string;
 	symetry?: "axial" | "central" | "none";
 	text?: string;
+	textFont?: TextFont; // pixel font used for `text`, default: "3x4"
 	textPadding?: number;
 	textPosition?:
 		| "top-center"
@@ -71,6 +84,7 @@ export default class Identicon {
 			shape: "square",
 			symetry: "axial",
 			textPosition: "bottom-right",
+			textFont: "3x4",
 			textPadding: 1,
 			...options,
 			textBackgroundColor: textBackgroundColor ?? undefined,
@@ -340,16 +354,22 @@ export default class Identicon {
 			textColor,
 			textBackgroundColor,
 			text,
+			textFont,
 			textPadding
 		} = this.options;
 
 		this.imageData = this.createImageData();
 
 		if (text) {
+			const font = TEXT_FONTS[textFont] ?? TEXT_FONTS["3x4"];
+			// Taken from the glyphs themselves so the accumulator always has
+			// exactly one row per row of the font.
+			const fontHeight = font.A?.length ?? 4;
+
 			// Add letter data to image data
 			let textMatrix = text.split("").reduce<number[][]>(
 				(acc, letter) => {
-					const letterMatrix = PIXEL_3x4_LETTERS[letter.toUpperCase() as "A"];
+					const letterMatrix = font[letter.toUpperCase()];
 
 					if (!letterMatrix) {
 						return acc;
@@ -372,7 +392,7 @@ export default class Identicon {
 
 					return acc;
 				},
-				[[], [], [], []]
+				Array.from({ length: fontHeight }, () => [] as number[])
 			);
 
 			textMatrix = this.addZerosAroundMatrix(textMatrix, textPadding);

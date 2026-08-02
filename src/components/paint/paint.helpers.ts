@@ -14,6 +14,7 @@ export interface PaintParams {
 	text: string;
 	textColor: string;
 	textPosition: IdenticonOptions["textPosition"];
+	textFont: IdenticonOptions["textFont"];
 	// Not part of the layout, only carried so we can link back to the playground.
 	pixelSize: number;
 }
@@ -55,6 +56,7 @@ export const DEFAULT_PAINT_PARAMS: PaintParams = {
 	text: "",
 	textColor: "#ffffff",
 	textPosition: "bottom-right",
+	textFont: "3x4",
 	pixelSize: 10
 };
 
@@ -82,6 +84,7 @@ export function extractGrid(
 		text: params.text || undefined,
 		textColor: params.textColor || undefined,
 		textPosition: params.textPosition,
+		textFont: params.textFont,
 		pixelSize: 1,
 		onColors: undefined
 	});
@@ -177,68 +180,81 @@ export function formatCell(step: CellStep): string {
 }
 
 export interface Measurements {
-	cellWidthMm: number;
-	cellHeightMm: number;
-	blockWidthMm: number; // every 5th cell
-	blockHeightMm: number;
+	squareMm: number;
+	identiconWidthCm: number;
+	identiconHeightCm: number;
+	blockCm: number; // every 5th square, the heavy gridline spacing
+	marginXCm: number; // bare canvas each side of the identicon
+	marginYCm: number;
+	fits: boolean;
 	warnings: string[];
 }
 
+/**
+ * The identicon and the canvas are sized independently: the square size is
+ * chosen, so the identicon's physical size is derived from it, and the canvas is
+ * whatever you actually bought. The margins fall out of the difference.
+ */
 export function measure({
-	canvasWidthCm,
-	canvasHeightCm,
-	marginCm,
 	width,
-	height
+	height,
+	squareCm,
+	canvasWidthCm,
+	canvasHeightCm
 }: {
+	width: number; // in squares
+	height: number; // in squares
+	squareCm: number;
 	canvasWidthCm: number;
 	canvasHeightCm: number;
-	marginCm: number;
-	width: number;
-	height: number;
 }): Measurements {
-	const drawableWidthMm = Math.max(0, canvasWidthCm - marginCm * 2) * 10;
-	const drawableHeightMm = Math.max(0, canvasHeightCm - marginCm * 2) * 10;
+	const square = positive(squareCm);
+	const canvasW = positive(canvasWidthCm);
+	const canvasH = positive(canvasHeightCm);
 
-	const cellWidthMm = width > 0 ? drawableWidthMm / width : 0;
-	const cellHeightMm = height > 0 ? drawableHeightMm / height : 0;
+	const identiconWidthCm = positive(width) * square;
+	const identiconHeightCm = positive(height) * square;
 
+	const marginXCm = (canvasW - identiconWidthCm) / 2;
+	const marginYCm = (canvasH - identiconHeightCm) / 2;
+	const fits = marginXCm >= 0 && marginYCm >= 0;
+
+	const squareMm = square * 10;
 	const warnings: string[] = [];
-	const smallest = Math.min(cellWidthMm, cellHeightMm);
 
-	if (smallest > 0 && smallest < 15) {
+	if (squareMm > 0 && squareMm < 15) {
 		warnings.push(
-			`Cells are ${round(smallest)}mm. Under 15mm you need a fine brush and the edges get fiddly.`
+			`Squares are ${round(squareMm, 1)}mm. Under 15mm you need a fine brush and the edges get fiddly.`
 		);
 	}
 
-	if (Math.abs(cellWidthMm - cellHeightMm) > 0.05) {
-		warnings.push(
-			`Cells are not square (${round(cellWidthMm)} x ${round(cellHeightMm)}mm). Match the canvas ratio to the grid ratio, or accept rectangles.`
-		);
-	}
+	if (!fits && canvasW > 0 && canvasH > 0) {
+		const over = [
+			marginXCm < 0 ? `${round(-marginXCm * 2, 1)}cm too wide` : "",
+			marginYCm < 0 ? `${round(-marginYCm * 2, 1)}cm too tall` : ""
+		]
+			.filter(Boolean)
+			.join(" and ");
 
-	// A tick that falls between millimetre marks has to be eyeballed 30 times,
-	// and the error compounds along the edge.
-	if (isAwkward(cellWidthMm) || isAwkward(cellHeightMm)) {
 		warnings.push(
-			`Cell size is not a round measurement. Mark every 5th cell instead of every cell, so the error cannot compound.`
+			`The identicon does not fit the canvas: it is ${over}. Use smaller squares or fewer of them.`
 		);
 	}
 
 	return {
-		cellWidthMm,
-		cellHeightMm,
-		blockWidthMm: cellWidthMm * 5,
-		blockHeightMm: cellHeightMm * 5,
+		squareMm,
+		identiconWidthCm,
+		identiconHeightCm,
+		blockCm: square * 5,
+		marginXCm,
+		marginYCm,
+		fits,
 		warnings
 	};
 }
 
-function isAwkward(mm: number): boolean {
-	if (mm <= 0) return false;
-	// Round to the nearest half millimetre: anything else is hard to rule.
-	return Math.abs(mm * 2 - Math.round(mm * 2)) > 0.01;
+function positive(n: number): number {
+	return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 export function round(n: number, decimals = 2): number {
@@ -264,6 +280,7 @@ export function serializePaintParams(params: PaintParams): string {
 		text: params.text,
 		textColor: params.textColor,
 		textPosition: String(params.textPosition),
+		textFont: String(params.textFont ?? DEFAULT_PAINT_PARAMS.textFont),
 		pixelSize: String(params.pixelSize || 10)
 	});
 	return `?${search.toString()}`;
@@ -287,6 +304,8 @@ export function parsePaintParams(search: URLSearchParams): PaintParams {
 		textColor: search.get("textColor") || DEFAULT_PAINT_PARAMS.textColor,
 		textPosition: (search.get("textPosition") ||
 			DEFAULT_PAINT_PARAMS.textPosition) as IdenticonOptions["textPosition"],
+		textFont: (search.get("textFont") ||
+			DEFAULT_PAINT_PARAMS.textFont) as IdenticonOptions["textFont"],
 		pixelSize: intOr(search.get("pixelSize"), DEFAULT_PAINT_PARAMS.pixelSize)
 	};
 }
@@ -313,7 +332,9 @@ export function layoutKey(params: PaintParams): string {
 		// into `colors` must not look like a different pattern.
 		effectiveColorCount(params),
 		params.text,
-		params.textPosition
+		params.textPosition,
+		// A different pixel font paints different squares.
+		params.textFont
 	].join("|");
 }
 

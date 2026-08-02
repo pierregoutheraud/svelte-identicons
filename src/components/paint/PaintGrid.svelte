@@ -12,7 +12,16 @@
 	export let focusIndex: number | null = null;
 	export let cellPx = 20;
 	export let symetry: IdenticonOptions["symetry"] = "axial";
+	/** The physical canvas, to the same scale as the squares. 0 hides it. */
+	export let sheetWidthPx = 0;
+	export let sheetHeightPx = 0;
 	export let onToggleCell: (index: number) => void = () => undefined;
+
+	// The sheet is centred on the squares and can be larger than them, so the
+	// container has to reserve the overhang or the scroll pane clips it.
+	$: padX = Math.max(0, (sheetWidthPx - width * cellPx) / 2);
+	$: padY = Math.max(0, (sheetHeightPx - height * cellPx) / 2);
+	$: showSheet = sheetWidthPx > 0 && sheetHeightPx > 0;
 
 	$: columns = Array.from({ length: width }, (_, i) => i + 1);
 	$: rows = Array.from({ length: height }, (_, i) => i + 1);
@@ -52,7 +61,7 @@
 
 <div
 	class="PaintGrid"
-	style="--cell:{cellPx}px; --columns:{width}; --fold:{foldColumn}"
+	style="--cell:{cellPx}px; --columns:{width}; --fold:{foldColumn}; --pad-x:{padX}px; --pad-y:{padY}px; --sheet-w:{sheetWidthPx}px; --sheet-h:{sheetHeightPx}px"
 >
 	<div class="corner" />
 
@@ -77,6 +86,10 @@
 	</div>
 
 	<div class="cells" use:delegateClick={onToggleCell}>
+		{#if showSheet}
+			<div class="sheet" />
+		{/if}
+
 		{#each grid as color, index}
 			{@const row = Math.floor(index / width)}
 			{@const column = index % width}
@@ -118,6 +131,23 @@
 		grid-template-rows: auto auto;
 		gap: 4px;
 		width: max-content;
+		padding: var(--pad-y) var(--pad-x);
+	}
+
+	/* The physical canvas, drawn to the same scale as the squares. */
+	.sheet {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		width: var(--sheet-w);
+		height: var(--sheet-h);
+		background: #ffffff;
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+		/* Behind everything, so the label gutters do not need a z-index of their
+		   own: that would make them a stacking context and cut their blend mode
+		   off from the sheet they sit on. */
+		z-index: -1;
 	}
 
 	.corner {
@@ -140,7 +170,11 @@
 		justify-content: center;
 		font-size: min(11px, calc(var(--cell) * 0.6));
 		line-height: 1;
-		color: #6f7681;
+		/* The gutters can sit over the dark page or over the white canvas
+		   depending on its size, so let the labels invert against whatever is
+		   behind them rather than picking one background and losing the other. */
+		color: #c8ced8;
+		mix-blend-mode: difference;
 	}
 
 	.labels-y .label {
@@ -150,12 +184,16 @@
 	}
 
 	.label.strong {
-		color: #b8bfc9;
+		color: #ffffff;
 		font-weight: 700;
 	}
 
+	/* Gold would invert to blue over white, so this one keeps its own chip. */
 	.label.focused {
-		color: gold;
+		mix-blend-mode: normal;
+		color: #22252b;
+		background: gold;
+		font-weight: 700;
 	}
 
 	.cells {
@@ -177,6 +215,7 @@
 		border-right: 1px solid rgba(0, 0, 0, 0.22);
 		border-bottom: 1px solid rgba(0, 0, 0, 0.22);
 		cursor: pointer;
+		z-index: 1;
 	}
 
 	.cell:disabled {
@@ -258,5 +297,6 @@
 		width: 0;
 		border-left: 1px dashed rgba(255, 215, 0, 0.8);
 		pointer-events: none;
+		z-index: 2;
 	}
 </style>

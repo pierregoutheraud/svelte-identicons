@@ -10,6 +10,7 @@
 		colors: string[];
 		textColor: string;
 		textPosition: IdenticonOptions["textPosition"];
+		textFont: IdenticonOptions["textFont"];
 	}
 </script>
 
@@ -36,6 +37,7 @@
 		text: params.text,
 		textColor: params.textColor,
 		textPosition: params.textPosition,
+		textFont: params.textFont,
 		pixelSize: params.pixelSize
 	})}`;
 
@@ -66,6 +68,7 @@
 		text={params.text.length ? params.text : undefined}
 		textColor={params.textColor}
 		textPosition={params.textPosition}
+		textFont={params.textFont}
 		bind:canvasElement
 	/>
 	<div class="actions">

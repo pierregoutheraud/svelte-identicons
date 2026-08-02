@@ -23,6 +23,7 @@ const BASE: PaintParams = {
 	text: "",
 	textColor: "#ffffff",
 	textPosition: "bottom-right",
+	textFont: "3x4",
 	pixelSize: 10
 };
 
@@ -74,6 +75,38 @@ describe("extractGrid", () => {
 	it("resolves an empty textColor to the background instead of an empty cell", () => {
 		const cells = grid({ text: "ab", textColor: "" });
 		expect(cells.every((c) => c.length > 0)).toBe(true);
+	});
+
+	it("draws a different overlay for each pixel font", () => {
+		const wide = grid({ text: "ab", textFont: "3x4" });
+		const small = grid({ text: "ab", textFont: "3x3" });
+
+		expect(small).not.toEqual(wide);
+		// The overlay only overwrites cells, so both must still be complete grids
+		// of the same size: the 3-row font must not leave holes.
+		expect(small).toHaveLength(wide.length);
+		expect(small.every((c) => typeof c === "string" && c.length > 0)).toBe(true);
+	});
+
+	it("keeps the underlying pattern identical when only the font changes", () => {
+		// The overlay never consumes the PRNG, so everything outside the letters
+		// must be untouched.
+		const plain = grid({ text: "" });
+		const small = grid({ text: "ab", textFont: "3x3" });
+		const changed = plain.filter((c, i) => c !== small[i]).length;
+
+		expect(changed).toBeGreaterThan(0);
+		expect(changed).toBeLessThan(plain.length);
+	});
+
+	it("drops characters the 3x3 font does not have", () => {
+		// 3x3 is A-Z only; 3x4 also has digits.
+		expect(grid({ text: "a1", textFont: "3x3" })).toEqual(
+			grid({ text: "a", textFont: "3x3" })
+		);
+		expect(grid({ text: "a1", textFont: "3x4" })).not.toEqual(
+			grid({ text: "a", textFont: "3x4" })
+		);
 	});
 
 	it("reproduces the same grid when the generated palette is fed back in", () => {
@@ -142,6 +175,13 @@ describe("serializePaintParams / parsePaintParams", () => {
 });
 
 describe("layoutKey", () => {
+	it("separates the two pixel fonts", () => {
+		// Different squares to paint, so progress must not carry across.
+		expect(layoutKey({ ...BASE, text: "ab", textFont: "3x3" })).not.toBe(
+			layoutKey({ ...BASE, text: "ab", textFont: "3x4" })
+		);
+	});
+
 	it("ignores hex values but not the color count", () => {
 		const two = ["#000000", "#ffffff"];
 		const twoOther = ["#123456", "#abcdef"];
@@ -260,37 +300,86 @@ describe("colorCells", () => {
 });
 
 describe("measure", () => {
-	const square = { canvasHeightCm: 60, marginCm: 0, width: 30, height: 30 };
+	const grid = { width: 30, height: 30 };
 
-	it("gives clean 20mm cells on a 60cm canvas", () => {
-		const m = measure({ ...square, canvasWidthCm: 60 });
-		expect(m.cellWidthMm).toBe(20);
-		expect(m.blockWidthMm).toBe(100);
+	it("derives the identicon size from the squares, not from the canvas", () => {
+		const m = measure({
+			...grid,
+			squareCm: 2,
+			canvasWidthCm: 60,
+			canvasHeightCm: 60
+		});
+
+		expect(m.identiconWidthCm).toBe(60);
+		expect(m.identiconHeightCm).toBe(60);
+		expect(m.squareMm).toBe(20);
+		expect(m.blockCm).toBe(10);
 		expect(m.warnings).toHaveLength(0);
 	});
 
-	it("flags a cell size that falls between ruler marks", () => {
-		const m = measure({ ...square, canvasWidthCm: 50, canvasHeightCm: 50 });
-		expect(m.cellWidthMm).toBeCloseTo(16.67, 1);
-		expect(m.warnings.join(" ")).toMatch(/not a round measurement/);
+	it("leaves the canvas free to be a different size than the identicon", () => {
+		const m = measure({
+			...grid,
+			squareCm: 1.5,
+			canvasWidthCm: 60,
+			canvasHeightCm: 80
+		});
+
+		// 30 x 1.5cm = 45cm of identicon on a 60 x 80cm canvas.
+		expect(m.identiconWidthCm).toBe(45);
+		expect(m.identiconHeightCm).toBe(45);
+		expect(m.marginXCm).toBe(7.5);
+		expect(m.marginYCm).toBe(17.5);
+		expect(m.fits).toBe(true);
+		expect(m.warnings).toHaveLength(0);
 	});
 
-	it("flags cells that are too small to brush comfortably", () => {
-		const m = measure({ ...square, canvasWidthCm: 40, canvasHeightCm: 40 });
+	it("flags squares too small to brush comfortably", () => {
+		const m = measure({
+			...grid,
+			squareCm: 1,
+			canvasWidthCm: 60,
+			canvasHeightCm: 60
+		});
+
+		expect(m.squareMm).toBe(10);
 		expect(m.warnings.join(" ")).toMatch(/Under 15mm/);
 	});
 
-	it("flags non-square cells and subtracts the margin", () => {
+	it("flags an identicon that overflows the canvas, and by how much", () => {
 		const m = measure({
+			...grid,
+			squareCm: 2.5,
 			canvasWidthCm: 60,
-			canvasHeightCm: 80,
-			marginCm: 5,
-			width: 30,
-			height: 30
+			canvasHeightCm: 90
 		});
-		expect(m.cellWidthMm).toBeCloseTo(16.67, 1);
-		expect(m.cellHeightMm).toBeCloseTo(23.33, 1);
-		expect(m.warnings.join(" ")).toMatch(/not square/);
+
+		// 75cm wide on a 60cm canvas: 15cm over. Height fits.
+		expect(m.identiconWidthCm).toBe(75);
+		expect(m.fits).toBe(false);
+		expect(m.marginXCm).toBe(-7.5);
+		expect(m.warnings.join(" ")).toMatch(/15cm too wide/);
+		expect(m.warnings.join(" ")).not.toMatch(/too tall/);
+	});
+
+	it("survives a cleared input without emitting NaN", () => {
+		const m = measure({
+			...grid,
+			squareCm: NaN,
+			canvasWidthCm: NaN,
+			canvasHeightCm: 60
+		});
+
+		for (const value of [
+			m.squareMm,
+			m.identiconWidthCm,
+			m.identiconHeightCm,
+			m.blockCm,
+			m.marginXCm,
+			m.marginYCm
+		]) {
+			expect(Number.isNaN(value)).toBe(false);
+		}
 	});
 });
 

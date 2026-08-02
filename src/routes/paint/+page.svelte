@@ -30,9 +30,9 @@
 	let stepIndex = -1;
 	let stepList: HTMLElement;
 	let cellPx = 20;
+	let squareCm = 2;
 	let canvasWidthCm = 60;
 	let canvasHeightCm = 60;
-	let marginCm = 0;
 	let showHowTo = false;
 	let verifyStatus = "";
 
@@ -85,12 +85,18 @@
 	$: focusRow = currentStep?.row ?? null;
 	$: focusIndex = currentStep?.index ?? null;
 	$: measurements = measure({
-		canvasWidthCm,
-		canvasHeightCm,
-		marginCm,
 		width: params.width,
-		height: params.height
+		height: params.height,
+		squareCm,
+		canvasWidthCm,
+		canvasHeightCm
 	});
+
+	// One scale for both: the zoom slider sets pixels per square, and the canvas
+	// is drawn against that same ratio so the margins you see are the real ones.
+	$: pxPerCm = squareCm > 0 ? cellPx / squareCm : 0;
+	$: sheetWidthPx = Math.max(0, canvasWidthCm * pxPerCm) || 0;
+	$: sheetHeightPx = Math.max(0, canvasHeightCm * pxPerCm) || 0;
 
 	$: paintedCount = (entry: PaletteEntry) => {
 		let count = 0;
@@ -186,6 +192,18 @@
 		const colors = materializeColors().slice(0, -1);
 		if (colors.length < 1) return;
 		params = { ...params, colors, numberOfColors: colors.length };
+	}
+
+	function handleChangeGridSize(key: "width" | "height", event: Event) {
+		const value = (event.target as HTMLInputElement).valueAsNumber;
+
+		if (!Number.isFinite(value) || value < 1) {
+			return;
+		}
+
+		// Grid dimensions feed the PRNG, so this redraws the pattern. layoutKey
+		// picks the change up and swaps in that pattern's own progress.
+		params = { ...params, [key]: value };
 	}
 
 	function handleSelectColor(color: string | null) {
@@ -321,6 +339,8 @@
 					{focusRow}
 					{focusIndex}
 					{cellPx}
+					{sheetWidthPx}
+					{sheetHeightPx}
 					symetry={params.symetry}
 					onToggleCell={handleToggleCell}
 				/>
@@ -343,12 +363,15 @@
 						text={params.text || undefined}
 						textColor={params.textColor}
 						textPosition={params.textPosition}
+						textFont={params.textFont}
 						onColors={undefined}
 					/>
 					<div class="preview-meta">
 						<p>{grid.length} cells</p>
 						<p><b>{toPaint}</b> to paint</p>
-						<p class="muted">{grid.length - toPaint} covered by the base coat</p>
+						<p class="muted">
+							{grid.length - toPaint} covered by the base coat
+						</p>
 					</div>
 				</div>
 				<div class="row">
@@ -360,10 +383,7 @@
 						Check grid matches canvas
 					</button>
 					{#if verifyStatus}
-						<span
-							class="verify"
-							class:bad={!verifyStatus.startsWith("all")}
-						>
+						<span class="verify" class:bad={!verifyStatus.startsWith("all")}>
 							{verifyStatus}
 						</span>
 					{/if}
@@ -462,7 +482,9 @@
 					</p>
 				{:else}
 					<div class="progress">
-						<div class="bar"><span style="width:{(totalPainted / toPaint) * 100}%" /></div>
+						<div class="bar">
+							<span style="width:{(totalPainted / toPaint) * 100}%" />
+						</div>
 						<p>Overall: {totalPainted} / {toPaint} cells</p>
 					</div>
 				{/if}
@@ -487,7 +509,9 @@
 						{/if}
 					</p>
 					<div class="row">
-						<button on:click={goPreviousStep} disabled={stepIndex < 0}>&lt;</button>
+						<button on:click={goPreviousStep} disabled={stepIndex < 0}
+							>&lt;</button
+						>
 						<button on:click={goNextStep}>
 							{stepIndex < 0 ? "Start" : "Done, next"}
 						</button>
@@ -515,30 +539,72 @@
 			{/if}
 
 			<section class="panel">
+				<h2>Identicon</h2>
+				<div class="row">
+					<span class="tag">W</span>
+					<input
+						type="number"
+						min="1"
+						max="100"
+						value={params.width}
+						on:input={(e) => handleChangeGridSize("width", e)}
+					/>
+					<span class="tag">H</span>
+					<input
+						type="number"
+						min="1"
+						max="100"
+						value={params.height}
+						on:input={(e) => handleChangeGridSize("height", e)}
+					/>
+					<span class="tag muted">squares</span>
+				</div>
+				<div class="row">
+					<span class="tag">Square</span>
+					<input
+						type="number"
+						bind:value={squareCm}
+						min="0.1"
+						step="0.1"
+						class="narrow"
+					/>
+					<span class="tag muted">cm</span>
+					<span class="hint inline">{round(measurements.squareMm, 1)}mm</span>
+				</div>
+				<dl class="measures">
+					<dt>Full size</dt>
+					<dd class="strong">
+						{round(measurements.identiconWidthCm, 2)} x {round(
+							measurements.identiconHeightCm,
+							2
+						)} cm
+					</dd>
+					<dt>Every 5th</dt>
+					<dd>{round(measurements.blockCm, 2)} cm</dd>
+				</dl>
+				<p class="hint">Changing the number of squares redraws the pattern.</p>
+			</section>
+
+			<section class="panel">
 				<h2>Canvas</h2>
 				<div class="row">
 					<span class="tag">W</span>
 					<input type="number" bind:value={canvasWidthCm} min="1" />
 					<span class="tag">H</span>
 					<input type="number" bind:value={canvasHeightCm} min="1" />
-					<span class="tag">margin</span>
-					<input type="number" bind:value={marginCm} min="0" />
 					<span class="tag muted">cm</span>
 				</div>
 				<dl class="measures">
-					<dt>Cell</dt>
+					<dt>Border</dt>
 					<dd>
-						{round(measurements.cellWidthMm, 2)} x {round(
-							measurements.cellHeightMm,
-							2
-						)} mm
-					</dd>
-					<dt>Every 5th</dt>
-					<dd>
-						{round(measurements.blockWidthMm, 2)} x {round(
-							measurements.blockHeightMm,
-							2
-						)} mm
+						{#if measurements.fits}
+							{round(measurements.marginXCm, 2)} cm sides &middot; {round(
+								measurements.marginYCm,
+								2
+							)} cm top and bottom
+						{:else}
+							&mdash;
+						{/if}
 					</dd>
 				</dl>
 				{#each measurements.warnings as warning}
@@ -563,13 +629,13 @@
 							{baseEntry?.count} cells are then finished.
 						</li>
 						<li>
-							Tick every cell along all four edges, then rule the every-5th lines
-							harder. A miscount stays trapped in one 5x5 block.
+							Tick every cell along all four edges, then rule the every-5th
+							lines harder. A miscount stays trapped in one 5x5 block.
 						</li>
 						{#if params.symetry === "axial"}
 							<li>
-								The pattern is mirrored down the dashed line, so you only have to
-								read {Math.ceil(params.width / 2)} columns.
+								The pattern is mirrored down the dashed line, so you only have
+								to read {Math.ceil(params.width / 2)} columns.
 							</li>
 						{/if}
 						<li>
@@ -877,6 +943,14 @@
 
 	.measures dt {
 		color: #8b929d;
+	}
+
+	.measures dd.strong {
+		color: gold;
+	}
+
+	.row input.narrow {
+		flex: 0 0 90px;
 	}
 
 	.howto-toggle {

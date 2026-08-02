@@ -14,7 +14,9 @@
 			: `colors={[${params.colors}]}`
 	}
   symetry="${params.symetry}"
-  text=${params.text?.length ? `"${params.text.length}"` : `{undefined}`}
+  text=${params.text?.length ? `"${params.text}"` : `{undefined}`}${
+		params.text?.length ? `\n  textFont="${params.textFont}"` : ``
+	}
   textColor="${params.textColor}"
 />`;
 
