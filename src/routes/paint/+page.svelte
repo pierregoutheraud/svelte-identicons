@@ -21,94 +21,139 @@
 		type PaletteEntry
 	} from "../../components/paint/paint.helpers.js";
 
-	let params: PaintParams = parsePaintParams($page.url.searchParams);
+	// Must stay $state initialised once from the URL. It must NEVER become
+	// $derived(parsePaintParams(page.url.searchParams)): the effect below calls
+	// goto() with a URL built from this, so deriving it from the URL turns that
+	// effect into an infinite navigation loop.
+	let params = $state<PaintParams>(parsePaintParams($page.url.searchParams));
 
-	let painted: boolean[] = [];
-	let loadedKey = "";
-	let activeColor: string | null = null;
+	let painted = $state<boolean[]>([]);
+	// What the user picked. All writes go here; `activeColor` below is the value
+	// actually valid against the current palette.
+	let selectedColor = $state<string | null>(null);
 	// Position in the current color's list of squares. -1 = not started.
-	let stepIndex = -1;
-	let stepList: HTMLElement;
-	let cellPx = 20;
-	let squareCm = 2;
-	let canvasWidthCm = 60;
-	let canvasHeightCm = 60;
-	let showHowTo = false;
-	let verifyStatus = "";
+	let stepIndex = $state(-1);
+	let stepList = $state<HTMLElement | undefined>();
+	let cellPx = $state(20);
+	let squareCm = $state(2);
+	let canvasWidthCm = $state(60);
+	let canvasHeightCm = $state(60);
+	let showHowTo = $state(false);
+	let verifyStatus = $state("");
 
-	// Runs during SSR too: extractGrid falls back to a stub canvas, and the
-	// engine fills imageData before it ever asks for a 2d context.
-	$: extraction = extractGrid(params);
-	$: grid = extraction.grid;
-	$: engineColors = extraction.colors;
-	$: palette = buildPalette(grid, extraction.backgroundColor);
-	$: baseEntry = palette.find((entry) => entry.isBase);
-	$: toPaint = palette
-		.filter((entry) => !entry.isBase)
-		.reduce((acc, entry) => acc + entry.count, 0);
-	$: duplicates = findDuplicateColors(engineColors);
+	// Neither is $state: both exist only to remember what the last run did. As
+	// $state they would be read and written by their own effect, which is the
+	// textbook self-invalidating loop.
+	let loadedKey = "";
+	let lastUrl = "";
 
-	$: key = layoutKey(params);
-	$: if (browser && key !== loadedKey) {
-		painted = loadProgress(key, params.width * params.height);
-		loadedKey = key;
-	}
+	// All $derived, not $effect: these are rendered, and effects do not run during
+	// SSR, so an effect would ship an empty grid in the server HTML. extractGrid
+	// works on the server because it falls back to a stub canvas and the engine
+	// fills imageData before it ever asks for a 2d context.
+	const extraction = $derived(extractGrid(params));
+	const grid = $derived(extraction.grid);
+	const engineColors = $derived(extraction.colors);
+	const palette = $derived(buildPalette(grid, extraction.backgroundColor));
+	const baseEntry = $derived(palette.find((entry) => entry.isBase));
+	const toPaint = $derived(
+		palette
+			.filter((entry) => !entry.isBase)
+			.reduce((acc, entry) => acc + entry.count, 0)
+	);
+	const duplicates = $derived(findDuplicateColors(engineColors));
 
-	$: if (browser) {
-		goto(serializePaintParams(params), {
-			keepFocus: true,
-			noScroll: true,
-			replaceState: true
-		});
-	}
+	const key = $derived(layoutKey(params));
 
-	// Removing a color slot (or anything else that redraws the palette) can leave
-	// the isolated color with no cells at all, which dims the whole grid and
-	// selects nothing. Fall back to the reference view instead.
-	$: if (
-		activeColor !== null &&
-		palette.length &&
-		!palette.some((entry) => entry.color === activeColor)
-	) {
-		activeColor = null;
-		stepIndex = -1;
-	}
+	// Stays an $effect: loadProgress reads localStorage, so a $derived would run
+	// on the hydration render and diverge from the server's empty array.
+	$effect(() => {
+		const nextKey = key;
+		// Read before the early return: an effect only depends on what it read on
+		// its last run, so a return above a read silently narrows the deps.
+		const size = params.width * params.height;
 
-	$: activeEntry = palette.find((entry) => entry.color === activeColor);
-	$: steps =
+		if (nextKey === loadedKey) {
+			return;
+		}
+
+		loadedKey = nextKey;
+		painted = loadProgress(nextKey, size);
+	});
+
+	$effect(() => {
+		const url = serializePaintParams(params);
+
+		// bind:value on the seed input fires this on every keystroke, and goto is
+		// an async router operation.
+		if (url === lastUrl) {
+			return;
+		}
+
+		lastUrl = url;
+		goto(url, { keepFocus: true, noScroll: true, replaceState: true });
+	});
+
+	// Derived rather than corrected after the fact: removing a color slot used to
+	// leave `activeColor` pointing at a color with no cells, which dimmed the
+	// whole grid with nothing selected. There is now no moment at which the
+	// selection and the palette disagree, so nothing needs fixing up — and no
+	// effect writes state it also reads.
+	const activeColor = $derived(
+		selectedColor !== null &&
+			palette.length &&
+			!palette.some((entry) => entry.color === selectedColor)
+			? null
+			: selectedColor
+	);
+
+	const activeEntry = $derived(
+		palette.find((entry) => entry.color === activeColor)
+	);
+	const steps = $derived(
 		activeColor && !activeEntry?.isBase
 			? colorCells(grid, params.width, activeColor)
-			: [];
-	$: currentStep = stepIndex >= 0 ? steps[stepIndex] ?? null : null;
+			: []
+	);
+	const currentStep = $derived(
+		stepIndex >= 0 ? (steps[stepIndex] ?? null) : null
+	);
 	// The grid still lifts the whole row, so you keep your place on the canvas
 	// while the ring marks the exact square.
-	$: focusRow = currentStep?.row ?? null;
-	$: focusIndex = currentStep?.index ?? null;
-	$: measurements = measure({
-		width: params.width,
-		height: params.height,
-		squareCm,
-		canvasWidthCm,
-		canvasHeightCm
-	});
+	const focusRow = $derived(currentStep?.row ?? null);
+	const focusIndex = $derived(currentStep?.index ?? null);
+	const measurements = $derived(
+		measure({
+			width: params.width,
+			height: params.height,
+			squareCm,
+			canvasWidthCm,
+			canvasHeightCm
+		})
+	);
 
 	// One scale for both: the zoom slider sets pixels per square, and the canvas
 	// is drawn against that same ratio so the margins you see are the real ones.
-	$: pxPerCm = squareCm > 0 ? cellPx / squareCm : 0;
-	$: sheetWidthPx = Math.max(0, canvasWidthCm * pxPerCm) || 0;
-	$: sheetHeightPx = Math.max(0, canvasHeightCm * pxPerCm) || 0;
+	const pxPerCm = $derived(squareCm > 0 ? cellPx / squareCm : 0);
+	const sheetWidthPx = $derived(Math.max(0, canvasWidthCm * pxPerCm) || 0);
+	const sheetHeightPx = $derived(Math.max(0, canvasHeightCm * pxPerCm) || 0);
 
-	$: paintedCount = (entry: PaletteEntry) => {
+	// A plain function, not $derived: it takes an argument, so there is nothing to
+	// memoise. Its reads of `grid` and `painted` are tracked through the call by
+	// whichever reaction invokes it.
+	function paintedCount(entry: PaletteEntry) {
 		let count = 0;
 		for (let i = 0; i < grid.length; i++) {
 			if (grid[i] === entry.color && painted[i]) count++;
 		}
 		return count;
-	};
+	}
 
-	$: totalPainted = palette
-		.filter((entry) => !entry.isBase)
-		.reduce((acc, entry) => acc + paintedCount(entry), 0);
+	const totalPainted = $derived(
+		palette
+			.filter((entry) => !entry.isBase)
+			.reduce((acc, entry) => acc + paintedCount(entry), 0)
+	);
 
 	function progressStorageKey(k: string) {
 		return `paint:progress:${k}`;
@@ -142,13 +187,11 @@
 
 	function handleToggleCell(index: number) {
 		painted[index] = !painted[index];
-		painted = painted;
 		saveProgress();
 	}
 
 	function setPainted(index: number, value: boolean) {
 		painted[index] = value;
-		painted = painted;
 		saveProgress();
 	}
 
@@ -177,8 +220,8 @@
 		colors[index] = value;
 		// Colors are identified by hex, so repainting the one you have isolated
 		// would otherwise drop you back to the "All" view mid-session.
-		if (activeColor === entry.color) {
-			activeColor = value;
+		if (selectedColor === entry.color) {
+			selectedColor = value;
 		}
 		params = { ...params, colors };
 	}
@@ -207,7 +250,7 @@
 	}
 
 	function handleSelectColor(color: string | null) {
-		activeColor = color;
+		selectedColor = color;
 		// Resume where the color was left off: the first square not yet painted.
 		stepIndex = -1;
 	}
@@ -236,8 +279,12 @@
 
 		stepIndex = stepIndex - 1;
 
-		if (stepIndex >= 0) {
-			setPainted(steps[stepIndex].index, false);
+		// Indexed defensively: shrinking the grid can leave stepIndex past the end
+		// of a shorter `steps`, and this used to throw on steps[stepIndex].index.
+		const step = steps[stepIndex];
+
+		if (step) {
+			setPainted(step.index, false);
 		}
 
 		scrollStepIntoView();
@@ -308,14 +355,16 @@
 			: `all ${grid.length} cells match`;
 	}
 
-	let previewCanvas: HTMLCanvasElement;
+	// $state because it is a bind: target on the Identicon component: a plain let
+	// would never receive the canvas, and getImageData below would throw.
+	let previewCanvas = $state<HTMLCanvasElement | undefined>();
 </script>
 
 <svelte:head>
 	<title>Paint mode | {params.seed}</title>
 </svelte:head>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 <main class="page">
 	<header class="header">
@@ -376,10 +425,10 @@
 				</div>
 				<div class="row">
 					<input type="text" bind:value={params.seed} placeholder="Seed" />
-					<button on:click={handleGenerateSeed}>Random</button>
+					<button onclick={handleGenerateSeed}>Random</button>
 				</div>
 				<div class="row">
-					<button class="ghost" on:click={() => handleVerify(previewCanvas)}>
+					<button class="ghost" onclick={() => handleVerify(previewCanvas)}>
 						Check grid matches canvas
 					</button>
 					{#if verifyStatus}
@@ -404,15 +453,14 @@
 							class="swatch"
 							style="background:{entry.color}"
 							title="Isolate {entry.label}"
-							on:click={() => handleSelectColor(entry.color)}
-						/>
+							onclick={() => handleSelectColor(entry.color)}
+						></button>
 						<span class="tag">{entry.label}</span>
 						{#if editable}
 							<input
 								type="color"
 								value={entry.color}
-								on:input={(e) =>
-									handleChangeColor(entry, e.currentTarget.value)}
+								oninput={(e) => handleChangeColor(entry, e.currentTarget.value)}
 							/>
 						{:else}
 							<span class="tag muted">text</span>
@@ -428,8 +476,8 @@
 				{/each}
 
 				<div class="row">
-					<button on:click={handleRemoveColor}>-</button>
-					<button on:click={handleAddColor}>+</button>
+					<button onclick={handleRemoveColor}>-</button>
+					<button onclick={handleAddColor}>+</button>
 					<span class="hint inline">changes the pattern</span>
 				</div>
 
@@ -448,15 +496,15 @@
 					<button
 						class="chip"
 						class:on={activeColor === null}
-						on:click={() => handleSelectColor(null)}>All</button
+						onclick={() => handleSelectColor(null)}>All</button
 					>
 					{#each palette as entry}
 						<button
 							class="chip"
 							class:on={activeColor === entry.color}
-							on:click={() => handleSelectColor(entry.color)}
+							onclick={() => handleSelectColor(entry.color)}
 						>
-							<span class="dot" style="background:{entry.color}" />
+							<span class="dot" style="background:{entry.color}"></span>
 							{entry.label}
 						</button>
 					{/each}
@@ -468,7 +516,7 @@
 							<span
 								style="width:{(paintedCount(activeEntry) / activeEntry.count) *
 									100}%"
-							/>
+							></span>
 						</div>
 						<p>
 							{activeEntry.label}: {paintedCount(activeEntry)} / {activeEntry.count}
@@ -483,7 +531,7 @@
 				{:else}
 					<div class="progress">
 						<div class="bar">
-							<span style="width:{(totalPainted / toPaint) * 100}%" />
+							<span style="width:{(totalPainted / toPaint) * 100}%"></span>
 						</div>
 						<p>Overall: {totalPainted} / {toPaint} cells</p>
 					</div>
@@ -494,7 +542,7 @@
 						Zoom
 						<input type="range" min="8" max="44" bind:value={cellPx} />
 					</label>
-					<button class="ghost" on:click={handleResetProgress}>Reset</button>
+					<button class="ghost" onclick={handleResetProgress}>Reset</button>
 				</div>
 			</section>
 
@@ -509,10 +557,10 @@
 						{/if}
 					</p>
 					<div class="row">
-						<button on:click={goPreviousStep} disabled={stepIndex < 0}
+						<button onclick={goPreviousStep} disabled={stepIndex < 0}
 							>&lt;</button
 						>
-						<button on:click={goNextStep}>
+						<button onclick={goNextStep}>
 							{stepIndex < 0 ? "Start" : "Done, next"}
 						</button>
 						<span class="hint inline step-count">
@@ -527,7 +575,7 @@
 								class:done={painted[step.index]}
 								data-step={i}
 							>
-								<button on:click={() => goToStep(i)}>
+								<button onclick={() => goToStep(i)}>
 									<b>{i + 1}</b>
 									<span>row {step.row} column {step.column}</span>
 									<span class="muted">{painted[step.index] ? "done" : ""}</span>
@@ -547,7 +595,7 @@
 						min="1"
 						max="100"
 						value={params.width}
-						on:input={(e) => handleChangeGridSize("width", e)}
+						oninput={(e) => handleChangeGridSize("width", e)}
 					/>
 					<span class="tag">H</span>
 					<input
@@ -555,7 +603,7 @@
 						min="1"
 						max="100"
 						value={params.height}
-						on:input={(e) => handleChangeGridSize("height", e)}
+						oninput={(e) => handleChangeGridSize("height", e)}
 					/>
 					<span class="tag muted">squares</span>
 				</div>
@@ -613,7 +661,7 @@
 			</section>
 
 			<section class="panel">
-				<button class="howto-toggle" on:click={() => (showHowTo = !showHowTo)}>
+				<button class="howto-toggle" onclick={() => (showHowTo = !showHowTo)}>
 					{showHowTo ? "-" : "+"} How to paint this
 				</button>
 				{#if showHowTo}

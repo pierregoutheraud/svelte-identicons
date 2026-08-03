@@ -44,7 +44,9 @@ describe("extractGrid", () => {
 	it("fills every cell of the grid", () => {
 		const cells = grid();
 		expect(cells).toHaveLength(900);
-		expect(cells.every((c) => typeof c === "string" && c.length > 0)).toBe(true);
+		expect(cells.every((c) => typeof c === "string" && c.length > 0)).toBe(
+			true
+		);
 	});
 
 	it("produces the same layout when only the hex values change", () => {
@@ -60,7 +62,9 @@ describe("extractGrid", () => {
 
 	it("changes the layout when the number of colors changes", () => {
 		// Why numberOfColors has to survive the URL round-trip verbatim.
-		expect(grid({ numberOfColors: 2 })).not.toEqual(grid({ numberOfColors: 3 }));
+		expect(grid({ numberOfColors: 2 })).not.toEqual(
+			grid({ numberOfColors: 3 })
+		);
 	});
 
 	it("changes the layout when numberOfColors disagrees with colors.length", () => {
@@ -85,7 +89,9 @@ describe("extractGrid", () => {
 		// The overlay only overwrites cells, so both must still be complete grids
 		// of the same size: the 3-row font must not leave holes.
 		expect(small).toHaveLength(wide.length);
-		expect(small.every((c) => typeof c === "string" && c.length > 0)).toBe(true);
+		expect(small.every((c) => typeof c === "string" && c.length > 0)).toBe(
+			true
+		);
 	});
 
 	it("keeps the underlying pattern identical when only the font changes", () => {
@@ -156,7 +162,11 @@ describe("serializePaintParams / parsePaintParams", () => {
 	it("normalises a NaN numberOfColors the same way the engine does", () => {
 		// The playground writes numberOfColors="" when custom colors are set,
 		// which parses to NaN; the engine reads that as `|| 1`.
-		const params: PaintParams = { ...BASE, numberOfColors: NaN, colors: ["#fff"] };
+		const params: PaintParams = {
+			...BASE,
+			numberOfColors: NaN,
+			colors: ["#fff"]
+		};
 		const parsed = parsePaintParams(
 			new URLSearchParams(serializePaintParams(params))
 		);

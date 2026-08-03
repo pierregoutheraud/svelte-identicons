@@ -1,38 +1,56 @@
 <script lang="ts">
 	import type { IdenticonOptions } from "$lib/engine/Identicon.js";
 
-	export let grid: string[];
-	export let width: number;
-	export let height: number;
-	export let baseColor: string;
-	export let activeColor: string | null = null;
-	export let painted: boolean[] = [];
-	export let focusRow: number | null = null;
-	/** Grid index of the square being painted right now. */
-	export let focusIndex: number | null = null;
-	export let cellPx = 20;
-	export let symetry: IdenticonOptions["symetry"] = "axial";
-	/** The physical canvas, to the same scale as the squares. 0 hides it. */
-	export let sheetWidthPx = 0;
-	export let sheetHeightPx = 0;
-	export let onToggleCell: (index: number) => void = () => undefined;
+	interface Props {
+		grid: string[];
+		width: number;
+		height: number;
+		baseColor: string;
+		activeColor?: string | null;
+		painted?: boolean[];
+		focusRow?: number | null;
+		/** Grid index of the square being painted right now. */
+		focusIndex?: number | null;
+		cellPx?: number;
+		symetry?: IdenticonOptions["symetry"];
+		/** The physical canvas, to the same scale as the squares. 0 hides it. */
+		sheetWidthPx?: number;
+		sheetHeightPx?: number;
+		onToggleCell?: (index: number) => void;
+	}
+
+	let {
+		grid,
+		width,
+		height,
+		baseColor,
+		activeColor = null,
+		painted = [],
+		focusRow = null,
+		focusIndex = null,
+		cellPx = 20,
+		symetry = "axial",
+		sheetWidthPx = 0,
+		sheetHeightPx = 0,
+		onToggleCell = () => undefined
+	}: Props = $props();
 
 	// The sheet is centred on the squares and can be larger than them, so the
 	// container has to reserve the overhang or the scroll pane clips it.
-	$: padX = Math.max(0, (sheetWidthPx - width * cellPx) / 2);
-	$: padY = Math.max(0, (sheetHeightPx - height * cellPx) / 2);
-	$: showSheet = sheetWidthPx > 0 && sheetHeightPx > 0;
+	const padX = $derived(Math.max(0, (sheetWidthPx - width * cellPx) / 2));
+	const padY = $derived(Math.max(0, (sheetHeightPx - height * cellPx) / 2));
+	const showSheet = $derived(sheetWidthPx > 0 && sheetHeightPx > 0);
 
-	$: columns = Array.from({ length: width }, (_, i) => i + 1);
-	$: rows = Array.from({ length: height }, (_, i) => i + 1);
-	$: isolating = activeColor !== null;
+	const columns = $derived(Array.from({ length: width }, (_, i) => i + 1));
+	const rows = $derived(Array.from({ length: height }, (_, i) => i + 1));
+	const isolating = $derived(activeColor !== null);
 	// The fold is only meaningful for axial symmetry. "central" mirrors on a flat
 	// index, which is a 180 degree rotation, not a line you can draw.
-	$: foldColumn = symetry === "axial" ? Math.ceil(width / 2) : 0;
+	const foldColumn = $derived(symetry === "axial" ? Math.ceil(width / 2) : 0);
 
-	// One delegated listener rather than 900. As an action rather than on:click,
-	// because the cells are real buttons and already handle the keyboard: an
-	// on:click on the container would only ask for a redundant key handler.
+	// One delegated listener rather than 900. As an action rather than an inline
+	// handler, because the cells are real buttons and already handle the keyboard:
+	// a click handler on the container would only ask for a redundant key handler.
 	function delegateClick(node: HTMLElement, handler: (index: number) => void) {
 		let current = handler;
 
@@ -63,7 +81,7 @@
 	class="PaintGrid"
 	style="--cell:{cellPx}px; --columns:{width}; --fold:{foldColumn}; --pad-x:{padX}px; --pad-y:{padY}px; --sheet-w:{sheetWidthPx}px; --sheet-h:{sheetHeightPx}px"
 >
-	<div class="corner" />
+	<div class="corner"></div>
 
 	<div class="labels-x">
 		{#each columns as column}
@@ -87,7 +105,7 @@
 
 	<div class="cells" use:delegateClick={onToggleCell}>
 		{#if showSheet}
-			<div class="sheet" />
+			<div class="sheet"></div>
 		{/if}
 
 		{#each grid as color, index}
@@ -119,7 +137,7 @@
 		{/each}
 
 		{#if foldColumn > 0}
-			<div class="fold" />
+			<div class="fold"></div>
 		{/if}
 	</div>
 </div>
@@ -272,7 +290,9 @@
 	.cell.active.painted.current,
 	.cell.active.outside.current {
 		opacity: 1;
-		box-shadow: inset 0 0 0 3px gold, 0 0 6px 1px rgba(255, 215, 0, 0.6);
+		box-shadow:
+			inset 0 0 0 3px gold,
+			0 0 6px 1px rgba(255, 215, 0, 0.6);
 		z-index: 1;
 	}
 

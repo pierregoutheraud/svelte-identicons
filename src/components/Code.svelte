@@ -1,9 +1,13 @@
 <script lang="ts">
 	import type { Params } from "./IdenticonItem.svelte";
 
-	export let params: Params;
+	interface Props {
+		params: Params;
+	}
 
-	$: code = `<Identicon
+	let { params }: Props = $props();
+
+	const code = $derived(`<Identicon
   seed="${params.seed}"
   height={${params.height}}
   width={${params.width}}
@@ -18,7 +22,7 @@
 		params.text?.length ? `\n  textFont="${params.textFont}"` : ``
 	}
   textColor="${params.textColor}"
-/>`;
+/>`);
 
 	async function handleClick() {
 		await navigator.clipboard.writeText(code);
@@ -27,7 +31,7 @@
 </script>
 
 <div class="Code">
-	<button on:click={handleClick}>Copy code</button>
+	<button onclick={handleClick}>Copy code</button>
 	<pre><code class="language-pascal">{code}</code></pre>
 </div>
 

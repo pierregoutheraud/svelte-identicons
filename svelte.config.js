@@ -1,5 +1,5 @@
 import adapter from "@sveltejs/adapter-vercel";
-import { vitePreprocess } from "@sveltejs/kit/vite";
+import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -14,10 +14,9 @@ const config = {
 		// manager from whichever lockfile it finds, and fails the whole build if
 		// the network call does.
 		//
-		// `runtime` must be set explicitly: adapter-vercel 3 (the last release
-		// compatible with SvelteKit 1) only auto-detects Node 16/18/20 and throws
-		// on anything newer. Naming it skips that detection entirely, so Node 24
-		// builds fine and the function matches .nvmrc and the Vercel setting.
+		// `runtime` is named rather than left to auto-detection so the deployed
+		// function matches .nvmrc and the Vercel project setting no matter which
+		// Node version the build machine happens to run.
 		adapter: adapter({ runtime: "nodejs24.x" })
 	}
 };

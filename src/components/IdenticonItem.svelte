@@ -1,4 +1,4 @@
-<script context="module" lang="ts">
+<script module lang="ts">
 	export interface Params {
 		seed: string;
 		text: string;
@@ -20,28 +20,35 @@
 	import { serializePaintParams } from "./paint/paint.helpers.js";
 	import Code from "./Code.svelte";
 
-	export let createUrl: (params: Params) => string;
-	export let params: Params;
-	let canvasElement: HTMLCanvasElement;
+	interface Props {
+		createUrl: (params: Params) => string;
+		params: Params;
+	}
+
+	let { createUrl, params }: Props = $props();
+	let canvasElement = $state<HTMLCanvasElement | undefined>();
 
 	// Deliberately not createUrl(): that one drops pixelSize and blanks
 	// numberOfColors when custom colors are set, and numberOfColors changes the
 	// layout. Painting the wrong pattern is expensive to discover.
-	$: paintHref = `/paint${serializePaintParams({
-		seed: params.seed,
-		width: params.width,
-		height: params.height,
-		symetry: params.symetry,
-		numberOfColors: params.numberOfColors,
-		colors: params.colors,
-		text: params.text,
-		textColor: params.textColor,
-		textPosition: params.textPosition,
-		textFont: params.textFont,
-		pixelSize: params.pixelSize
-	})}`;
+	const paintHref = $derived(
+		`/paint${serializePaintParams({
+			seed: params.seed,
+			width: params.width,
+			height: params.height,
+			symetry: params.symetry,
+			numberOfColors: params.numberOfColors,
+			colors: params.colors,
+			text: params.text,
+			textColor: params.textColor,
+			textPosition: params.textPosition,
+			textFont: params.textFont,
+			pixelSize: params.pixelSize
+		})}`
+	);
 
 	function handleDownload() {
+		if (!canvasElement) return;
 		var link = document.createElement("a");
 		link.download = "filename.png";
 		link.href = canvasElement.toDataURL();
@@ -73,8 +80,8 @@
 	/>
 	<div class="actions">
 		<Code {params} />
-		<button on:click={handleDownload}>Download image</button>
-		<button on:click={() => handleCopyLink(params)}>Copy link</button>
+		<button onclick={handleDownload}>Download image</button>
+		<button onclick={() => handleCopyLink(params)}>Copy link</button>
 		<a class="paint" href={paintHref}>Paint this</a>
 	</div>
 </div>

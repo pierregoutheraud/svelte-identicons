@@ -1,19 +1,23 @@
 <script lang="ts">
 	import Identicon from "$lib/components/Identicon/Identicon.svelte";
 
-	let size = 400;
-	let pixelSize = 10;
-	let seed = "0";
-	let colors: string[] = [];
-	let numberOfColors = 3;
-	let text = "";
+	let size = $state(400);
+	let pixelSize = $state(10);
+	let seed = $state("0");
+	let colors = $state<string[]>([]);
+	let numberOfColors = $state(3);
+	let text = $state("");
 
 	// let array = Array.from({ length: 101 }, (_, i) => i);
 	// let array = [100];
 
-	$: height = Math.floor(size / pixelSize);
-	$: width = height;
+	const height = $derived(Math.floor(size / pixelSize));
+	const width = $derived(height);
 
+	// Assigns `colors` unconditionally, which is only safe because `colors` is NOT
+	// passed back into <Identicon> below. Pass it down and this becomes a write to
+	// a prop the child's effect depends on: an infinite loop that throws
+	// effect_update_depth_exceeded. The swatch strip is display-only on purpose.
 	function handleColors(newColors: string[]) {
 		colors = newColors;
 	}
@@ -61,7 +65,7 @@
 				style:background-color={color}
 				style:width="20px"
 				style:height="20px"
-			/>
+			></div>
 		{/each}
 	</div>
 
@@ -71,7 +75,7 @@
 			<input bind:value={seed} />
 			<button
 				type="button"
-				on:click={() => {
+				onclick={() => {
 					// Generate a uniq random id seed
 					seed = Math.random().toString(36).substring(2);
 				}}>random</button

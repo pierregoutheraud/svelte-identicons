@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { browser } from "$app/environment";
+	import { untrack } from "svelte";
 	import { goto } from "$app/navigation";
 	import { page } from "$app/stores";
 	import type { IdenticonOptions } from "$lib/engine/Identicon.js";
@@ -9,12 +9,34 @@
 		type Params
 	} from "../components/IdenticonItem.svelte";
 
-	let params: Params = parseParams($page.url.searchParams);
-	let prevParams: Params | undefined = undefined;
-	let history: Params[] = [];
-	let canvasElement: HTMLCanvasElement;
+	let params = $state<Params>(parseParams($page.url.searchParams));
 
-	$: saveParams(params);
+	// Rendered as the History list, so it has to stay reactive state.
+	let history = $state<Params[]>([]);
+
+	// Deliberately NOT $state: nothing renders it, it is only ever compared
+	// against. Keeping it out of the reactive graph is half of what stops the
+	// effect below from invalidating itself.
+	let prevParams: Params | undefined = undefined;
+
+	$effect(() => {
+		// Tracked: createUrl() reads every field it serialises. That matters —
+		// with $state, `bind:value={params.seed}` invalidates one property, not
+		// the whole object, so depending on the `params` reference alone would
+		// silently stop tracking the seed, text, position, font and symetry
+		// inputs.
+		const url = createUrl(params);
+		const snapshot = $state.snapshot(params) as Params;
+
+		// Untracked: reads and writes state this effect must not depend on.
+		untrack(() => {
+			if (prevParams) {
+				history = [prevParams, ...history].slice(0, 10);
+			}
+			goto(url, { keepFocus: true, noScroll: true });
+			prevParams = snapshot;
+		});
+	});
 
 	function parseParams(params: URLSearchParams): Params {
 		return {
@@ -56,36 +78,8 @@
 		return `?${newQueryParams.toString()}`;
 	}
 
-	function saveParams(...p: any) {
-		if (prevParams) {
-			history = [prevParams, ...history].slice(0, 10);
-		}
-
-		const newQueryParamsString = createUrl(params);
-
-		if (browser) {
-			goto(`${newQueryParamsString}`, { keepFocus: true, noScroll: true });
-		}
-
-		prevParams = structuredClone(params);
-	}
-
 	function generateSeed() {
 		return generatePseudoWord(10);
-	}
-
-	function handleDownload() {
-		var link = document.createElement("a");
-		link.download = "filename.png";
-		link.href = canvasElement.toDataURL();
-		link.click();
-	}
-
-	async function handleCopyLink(params: Params) {
-		await navigator.clipboard.writeText(
-			window.location.origin + "/" + createUrl(params)
-		);
-		window.alert("Url copied!");
 	}
 
 	function handleAddColor() {
@@ -182,7 +176,7 @@
 					<input type="text" bind:value={params.seed} placeholder="Seed" />
 				</label>
 				<button
-					on:click={() => {
+					onclick={() => {
 						params = {
 							...params,
 							seed: generateSeed()
@@ -204,7 +198,7 @@
 							value={params.numberOfColors}
 							min="2"
 							max="10"
-							on:input={(e) => handleChangeInputNumber(e, "numberOfColors")}
+							oninput={(e) => handleChangeInputNumber(e, "numberOfColors")}
 						/>
 					</label>
 				</div>
@@ -222,14 +216,14 @@
 									id="head"
 									name="head"
 									value={color}
-									on:change={(e) => handleChangeColor(i, e)}
+									onchange={(e) => handleChangeColor(i, e)}
 								/>
-								<button on:click={() => handleRemoveColor(i)}>Remove</button>
+								<button onclick={() => handleRemoveColor(i)}>Remove</button>
 							</div>
 						{/each}
 					</div>
 				{/if}
-				<button on:click={handleAddColor}>Add</button>
+				<button onclick={handleAddColor}>Add</button>
 			</div>
 		</div>
 
@@ -242,7 +236,7 @@
 						value={params.height}
 						min="1"
 						max="100"
-						on:input={(e) => handleChangeInputNumber(e, "height")}
+						oninput={(e) => handleChangeInputNumber(e, "height")}
 					/>
 					<!-- <input type="range" bind:value={params.height} min="1" max="500" /> -->
 				</label>
@@ -256,7 +250,7 @@
 						value={params.width}
 						min="1"
 						max="100"
-						on:input={(e) => handleChangeInputNumber(e, "width")}
+						oninput={(e) => handleChangeInputNumber(e, "width")}
 					/>
 					<!-- <input type="range" bind:value={params.width} min="1" max="500" /> -->
 				</label>
@@ -270,7 +264,7 @@
 						value={params.pixelSize}
 						min="1"
 						max="100"
-						on:input={(e) => handleChangeInputNumber(e, "pixelSize")}
+						oninput={(e) => handleChangeInputNumber(e, "pixelSize")}
 					/>
 					<!-- <input type="range" bind:value={params.pixelSize} min="1" max="100" /> -->
 				</label>
@@ -287,7 +281,7 @@
 						id="head"
 						name="head"
 						value={params.textColor}
-						on:change={handleChangeTextColor}
+						onchange={handleChangeTextColor}
 					/>
 				</label>
 			</div>

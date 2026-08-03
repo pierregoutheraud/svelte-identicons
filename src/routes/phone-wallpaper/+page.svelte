@@ -4,15 +4,15 @@
 	import { generatePseudoWord } from "$lib/helpers/general.helpers.js";
 	import { onMount } from "svelte";
 
-	let canvasElement: HTMLCanvasElement;
-	let seed = generatePseudoWord(10);
-	let pixelSize = 10;
-	let width = 0;
-	let height = 0;
-	let symetry = "axial" as const;
+	let canvasElement = $state<HTMLCanvasElement | undefined>();
+	let seed = $state(generatePseudoWord(10));
+	let pixelSize = $state(10);
+	let width = $state(0);
+	let height = $state(0);
+	const symetry = "axial" as const;
 
-	let numberOfColors = 2;
-	let colors: string[] | undefined = undefined;
+	let numberOfColors = $state(2);
+	let colors = $state<string[] | undefined>(undefined);
 
 	onMount(() => {
 		width = Math.ceil(screen.width / pixelSize);
@@ -20,6 +20,7 @@
 	});
 
 	function handleDownload() {
+		if (!canvasElement) return;
 		var link = document.createElement("a");
 		link.download = "filename.png";
 		link.href = canvasElement.toDataURL();
@@ -68,7 +69,7 @@
 		<div class="row">
 			<p class="label">Seed</p>
 			<input type="text" bind:value={seed} placeholder="Type anything here" />
-			<button on:click={generateSeed}>Generate</button>
+			<button onclick={generateSeed}>Generate</button>
 		</div>
 
 		{#if !colors}
@@ -79,7 +80,7 @@
 					bind:value={numberOfColors}
 					placeholder="Number of colors"
 				/>
-				<button on:click={handleClickCustomColors}>Custom</button>
+				<button onclick={handleClickCustomColors}>Custom</button>
 			</div>
 		{/if}
 
@@ -87,7 +88,7 @@
 			<div class="colors">
 				<p class="label">Colors</p>
 				<button
-					on:click={handleClickDecrementColor}
+					onclick={handleClickDecrementColor}
 					disabled={colors.length <= 2}>-</button
 				>
 				{#each colors as color, i}
@@ -96,14 +97,14 @@
 						id="head"
 						name="head"
 						value={color}
-						on:change={(e) => handleChangeColor(i, e)}
+						onchange={(e) => handleChangeColor(i, e)}
 					/>
 				{/each}
-				<button on:click={handleClickIncrementColor}>+</button>
+				<button onclick={handleClickIncrementColor}>+</button>
 			</div>
 		{/if}
 
-		<button class="download" on:click={handleDownload}>Download image</button>
+		<button class="download" onclick={handleDownload}>Download image</button>
 	</div>
 
 	<Identicon
