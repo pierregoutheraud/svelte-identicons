@@ -465,6 +465,9 @@
 						{:else}
 							<span class="tag muted">text</span>
 						{/if}
+						<!-- user-select: all, so one click selects the whole hex ready to
+						     copy rather than making you drag across 7 characters. -->
+						<span class="hex" title="Click to select">{entry.color}</span>
 						<span class="count">
 							{entry.count}
 							<span class="muted">({round(entry.pct, 1)}%)</span>
@@ -854,6 +857,16 @@
 		font-size: 12px;
 		color: #8b929d;
 		flex-shrink: 0;
+	}
+
+	.hex {
+		font-size: 12px;
+		color: #b8bfc9;
+		flex-shrink: 0;
+		cursor: text;
+		/* One click selects the whole value. */
+		user-select: all;
+		-webkit-user-select: all;
 	}
 
 	.count {
