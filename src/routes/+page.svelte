@@ -285,7 +285,9 @@
 					/>
 				</label>
 			</div>
+		</div>
 
+		<div class="fieldsets-row">
 			<div class="fieldset">
 				<label class="input-field">
 					<p>Text position</p>
@@ -401,7 +403,6 @@
 		border: 1px solid white;
 		align-items: center;
 		height: fit-content;
-		padding: 0 0 0 10px;
 		justify-content: space-between;
 	}
 
@@ -410,10 +411,10 @@
 		margin-left: auto;
 	}
 
-	.fieldset label > p {
+	.fieldset p {
 		font-size: 16px;
 		position: relative;
-		padding-right: 10px;
+		padding: 0 10px;
 		top: 1px;
 	}
 
