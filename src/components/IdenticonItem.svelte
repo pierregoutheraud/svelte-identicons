@@ -17,6 +17,10 @@
 <script lang="ts">
 	import Identicon from "$lib/components/Identicon/Identicon.svelte";
 	import { type IdenticonOptions } from "$lib/engine/Identicon.js";
+	import {
+		serializeFaviconParams,
+		type FaviconSymetry
+	} from "./favicon/favicon.helpers.js";
 	import { serializePaintParams } from "./paint/paint.helpers.js";
 	import Code from "./Code.svelte";
 
@@ -44,6 +48,15 @@
 			textPosition: params.textPosition,
 			textFont: params.textFont,
 			pixelSize: params.pixelSize
+		})}`
+	);
+	const faviconHref = $derived(
+		`/favicon${serializeFaviconParams({
+			seed: params.seed,
+			numberOfColors: Math.min(5, Math.max(2, params.numberOfColors || 3)),
+			colors: params.colors.slice(0, 5),
+			symetry: (params.symetry || "axial") as FaviconSymetry,
+			shape: "square"
 		})}`
 	);
 
@@ -83,6 +96,7 @@
 		<button onclick={handleDownload}>Download image</button>
 		<button onclick={() => handleCopyLink(params)}>Copy link</button>
 		<a class="paint" href={paintHref}>Paint this</a>
+		<a class="favicon" href={faviconHref}>Create favicon</a>
 	</div>
 </div>
 
@@ -98,9 +112,12 @@
 		display: flex;
 		align-items: center;
 		gap: 18px;
+		flex-wrap: wrap;
+		justify-content: center;
 	}
 
-	.paint {
+	.paint,
+	.favicon {
 		display: flex;
 		align-items: center;
 		height: 33px;
@@ -113,5 +130,16 @@
 
 	.paint:hover {
 		background: goldenrod;
+	}
+
+	.favicon {
+		border: 1px solid white;
+		background: transparent;
+		color: white;
+	}
+
+	.favicon:hover {
+		border-color: gold;
+		color: gold;
 	}
 </style>

@@ -35,6 +35,9 @@ importers:
       eslint-plugin-svelte:
         specifier: ^2.26.0
         version: 2.46.1(eslint@8.57.1)(svelte@5.56.8)
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       prettier:
         specifier: ^3.0.0
         version: 3.9.6
@@ -875,6 +878,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   file-entry-cache@6.0.1:
     resolution: {integrity: sha512-7Gps/XWymbLk2QLYK4NzpMOrYjMhdIxXuIvy2QBsLE6ljuodKvdkWs/cpyJJ3CVIVpH0Oi1Hvg1ovbMzLdFBBg==}
@@ -2384,6 +2390,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
+
+  fflate@0.8.3: {}
 
   file-entry-cache@6.0.1:
     dependencies:

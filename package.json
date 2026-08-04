@@ -52,6 +52,7 @@
 		"eslint": "^8.28.0",
 		"eslint-config-prettier": "^8.5.0",
 		"eslint-plugin-svelte": "^2.26.0",
+		"fflate": "^0.8.3",
 		"prettier": "^3.0.0",
 		"prettier-plugin-svelte": "^4.0.0",
 		"publint": "^0.3.0",
