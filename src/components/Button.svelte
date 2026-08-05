@@ -51,7 +51,8 @@
 		align-items: center;
 		justify-content: center;
 		height: 40px;
-		padding: 0 12px;
+		/* Cousine's visible glyphs sit a touch high in their line box. */
+		padding: 2px 12px 0;
 		border: none;
 		font-family: "Cousine", monospace;
 		font-size: 16px;
