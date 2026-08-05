@@ -191,8 +191,8 @@ describe("size independence", () => {
 describe("symmetry", () => {
 	// Odd widths are deliberately NOT mirror-exact by default: the axis stays
 	// between cells so the middle never moves, which means an odd width is an even
-	// identicon plus one column. `strictSymetry: true` is the opt-in that trades
-	// that back. See IdenticonOptions.strictSymetry.
+	// identicon plus one column. `symetryAxis: "column"` or `"exact"` are the opt-ins that trade
+	// that back. See IdenticonOptions.symetryAxis.
 	it("mirrors axial horizontally at even widths", () => {
 		for (const width of [2, 4, 10, 30]) {
 			const cells = grid(width, 4, "axial");

@@ -90,18 +90,35 @@ export function axisDistance(i: number, axis: number): number {
 }
 
 /**
+ * Distance outward from a mirror axis sitting ON a column, so that column is
+ * unique instead of being half of a matched pair.
+ *
+ *   size 7  ->  3 2 1 0 1 2 3      <- exactly mirrored, single middle column
+ *   size 6  ->  3 2 1 0 1 2        <- one extra column on the left
+ *   size 3  ->  1 0 1
+ *
+ * `symetryAxis: "column"`. Index 0 occurs exactly once at every size, which reads
+ * cleaner than a doubled middle. Odd sizes come out exactly mirrored; even sizes
+ * carry one extra column on the left, the same trade `axisDistance` makes for odd
+ * sizes. Still fully size-stable: `floor(size/2)` moves by one every other step,
+ * so cells keep their distance as the grid grows.
+ */
+export function columnDistance(i: number, size: number): number {
+	return Math.abs(i - Math.floor(size / 2));
+}
+
+/**
  * Distance outward from the centre, kept perfectly mirror-symmetric at every size.
  *
  *   size 8  ->  3 2 1 0 0 1 2 3
- *   size 7  ->  3 2 1 0 1 2 3      <- axis lands ON the middle cell
+ *   size 7  ->  3 2 1 0 1 2 3
  *   size 3  ->  1 0 1
  *
- * The alternative used when `strictSymetry` is on. It guarantees
- * `c(i) === c(size-1-i)` for every size, which `axisDistance` gives up at odd
- * sizes. The cost is that the axis has to move onto a cell when the size is odd,
- * so the number of cells between the axis and each edge changes with parity and
- * the pattern shifts as the size crosses from even to odd. Index 0 is still the
- * middle, so the middle keeps its colour either way.
+ * `symetryAxis: "exact"`. The only option that guarantees
+ * `c(i) === c(size-1-i)` at *every* size — the other two each give that up on one
+ * parity. The cost is the one thing they both keep: the axis has to jump between
+ * sitting on a column and sitting in a gap as the size changes parity, so the
+ * pattern shifts and resizing is no longer stable.
  */
 export function symmetricDistance(i: number, size: number): number {
 	return Math.ceil(size / 2) - 1 - Math.min(i, size - 1 - i);

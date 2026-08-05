@@ -49,7 +49,8 @@
 			colors: params.get("colors")?.length
 				? params.get("colors")!.split(",")
 				: [],
-			strictSymetry: params.get("strictSymetry") === "1",
+			symetryAxis: (params.get("symetryAxis") ||
+				"gap") as IdenticonOptions["symetryAxis"],
 			symetry: (params.get("symetry") ||
 				"axial") as IdenticonOptions["symetry"],
 			textColor: "#ffffff",
@@ -71,7 +72,7 @@
 			height: params.height?.toString() || "1",
 			width: params.width?.toString() || "1",
 			symetry: params.symetry as string,
-			strictSymetry: params.strictSymetry ? "1" : "",
+			symetryAxis: params.symetryAxis as string,
 			colors: params.colors.join(","),
 			textColor: params.textColor,
 			textPosition: params.textPosition as string,
@@ -360,14 +361,15 @@
 		</div>
 
 		{#if params.symetry !== "none"}
-			<div class="fieldset fieldset-radio">
-				<p>Strict symetry</p>
-				<div>
-					<label class="radio">
-						<input type="checkbox" bind:checked={params.strictSymetry} />
-						<p>Mirror exactly at odd widths (pattern shifts on parity)</p>
-					</label>
-				</div>
+			<div class="fieldset">
+				<label class="input-field">
+					<p>Mirror axis</p>
+					<select bind:value={params.symetryAxis}>
+						<option value="gap">Between columns (paired middle)</option>
+						<option value="column">On a column (unique middle)</option>
+						<option value="exact">Exact mirror (shifts on resize)</option>
+					</select>
+				</label>
 			</div>
 		{/if}
 	</div>

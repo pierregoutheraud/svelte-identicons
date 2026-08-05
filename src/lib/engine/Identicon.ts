@@ -6,6 +6,7 @@ import { hslToHex } from "$lib/helpers/colors.helpers.js";
 import {
 	axisDistance,
 	cellValue,
+	columnDistance,
 	hashStringToInteger,
 	mirrorAxis,
 	pickByWeight,
@@ -38,18 +39,24 @@ export interface IdenticonOptions {
 	textColor?: number | string;
 	symetry?: "axial" | "central" | "none";
 	/**
-	 * Force perfect mirror symmetry at odd sizes too, default: false.
+	 * Where the mirror axis sits, default: "gap".
 	 *
-	 * Off (the default), the mirror axis always sits between two cells, so an odd
-	 * size is an even identicon with one extra column on the left — very slightly
-	 * asymmetric, but the middle never moves and resizing only ever adds cells at
-	 * the outer edges.
+	 * A mirror axis can fall in the gap between two columns or on a column itself,
+	 * and the choice is visible: in a gap the two middle columns pair up, on a
+	 * column that column is unique. Whichever you pick, one parity of width has to
+	 * carry an extra column — you cannot mirror both an even and an odd count
+	 * exactly around the same kind of axis.
 	 *
-	 * On, every size satisfies `c(x) === c(width-1-x)`. The axis has to move onto a
-	 * cell at odd sizes to manage that, so the pattern shifts whenever the size
-	 * crosses between even and odd.
+	 * - `"gap"` — axis between two columns. Even widths mirror exactly; odd widths
+	 *   carry one extra column. Middle is a matched pair. Size-stable.
+	 * - `"column"` — axis on a column, so the middle column is unique at every
+	 *   width. Odd widths mirror exactly; even widths carry one extra column.
+	 *   Size-stable.
+	 * - `"exact"` — mirror exactly at *every* width. The axis then has to move
+	 *   between a gap and a column as the width changes parity, so the pattern
+	 *   shifts and resizing is no longer stable.
 	 */
-	strictSymetry?: boolean;
+	symetryAxis?: "gap" | "column" | "exact";
 	text?: string;
 	textFont?: TextFont; // pixel font used for `text`, default: "3x4"
 	textPadding?: number;
@@ -111,7 +118,7 @@ export default class Identicon {
 			pixelSize: 4,
 			shape: "square",
 			symetry: "axial",
-			strictSymetry: false,
+			symetryAxis: "gap",
 			textPosition: "bottom-right",
 			textFont: "3x4",
 			textPadding: 1,
@@ -237,15 +244,18 @@ export default class Identicon {
 	 * top rows stay fixed.
 	 */
 	private cellCoordinate(x: number, y: number): [number, number] {
-		const { width, height, symetry, strictSymetry } = this.options;
+		const { width, height, symetry, symetryAxis } = this.options;
 
-		// Either keep the axis between cells (middle never moves, odd sizes gain a
-		// column on one side) or pin perfect symmetry at every size (pattern shifts
-		// when the size crosses parity).
-		const mirrored = (i: number, size: number) =>
-			strictSymetry
-				? symmetricDistance(i, size)
-				: axisDistance(i, mirrorAxis(size));
+		const mirrored = (i: number, size: number) => {
+			switch (symetryAxis) {
+				case "column":
+					return columnDistance(i, size);
+				case "exact":
+					return symmetricDistance(i, size);
+				default:
+					return axisDistance(i, mirrorAxis(size));
+			}
+		};
 
 		switch (symetry) {
 			case "axial":
