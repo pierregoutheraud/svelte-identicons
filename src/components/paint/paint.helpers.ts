@@ -326,10 +326,12 @@ export function layoutKey(params: PaintParams): string {
 		params.width,
 		params.height,
 		params.symetry,
-		params.numberOfColors || 1,
-		// The count the engine actually weights by: an empty `colors` means it
-		// generated `numberOfColors` of them. Materialising the generated palette
-		// into `colors` must not look like a different pattern.
+		// Only the effective count matters, not numberOfColors itself: the engine
+		// hashes cell coordinates rather than consuming a random stream, so
+		// numberOfColors no longer shifts the pattern — it only decides how many
+		// colours get generated when `colors` is empty. An empty `colors` means it
+		// generated `numberOfColors` of them, so materialising the generated
+		// palette into `colors` must not look like a different pattern.
 		effectiveColorCount(params),
 		params.text,
 		params.textPosition,

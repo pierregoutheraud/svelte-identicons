@@ -1,19 +1,10 @@
+import { hashStringToInteger, pickByWeight } from "./hash.js";
+
 export class Random {
 	private numberSeed: number;
 
 	constructor(seed: string) {
-		this.numberSeed = this.hashStringToInteger(seed);
-	}
-
-	private hashStringToInteger(seed: string): number {
-		let hash = 0;
-		for (let i = 0; i < seed.length; i++) {
-			const char = seed.charCodeAt(i);
-			hash = (hash << 5) - hash + char;
-			// hash = hash & hash; // Convert to 32bit integer
-			hash = hash >>> 0; // Convert to 32bit unsigned integer
-		}
-		return hash;
+		this.numberSeed = hashStringToInteger(seed);
 	}
 
 	// Generate number in range [0,1]
@@ -37,26 +28,6 @@ export class Random {
 	}
 
 	pickRandomChoice(choices: string[], weights: number[]): string {
-		// Calculate the cumulative weights
-		const cumulativeWeights: number[] = [];
-		for (let i = 0; i < weights.length; i++) {
-			cumulativeWeights[i] = weights[i] + (cumulativeWeights[i - 1] || 0);
-		}
-		// console.log("Random | weights", weights);
-		// console.log("Random | cumulativeWeights", cumulativeWeights);
-
-		// Generate a random number between 0 and the sum of weights
-		const random =
-			this.next() * cumulativeWeights[cumulativeWeights.length - 1];
-
-		// Find the index where the random number fits in the cumulative weights
-		for (let i = 0; i < cumulativeWeights.length; i++) {
-			if (random < cumulativeWeights[i]) {
-				return choices[i];
-			}
-		}
-
-		// This should never happen if weights are properly set
-		throw new Error("Failed to pick a choice.");
+		return pickByWeight(choices, weights, this.next());
 	}
 }

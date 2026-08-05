@@ -3,7 +3,19 @@ import {
 	PIXEL_3x4_LETTERS
 } from "$lib/constants/pixel-letters.js";
 import { hslToHex } from "$lib/helpers/colors.helpers.js";
+import {
+	axisDistance,
+	cellValue,
+	hashStringToInteger,
+	mirrorAxis,
+	pickByWeight,
+	symmetricDistance
+} from "./hash.js";
 import { Random } from "./Random.js";
+
+// Keeps the per-cell shape draw on its own channel so it cannot correlate with
+// the colour drawn at the same coordinate.
+const SHAPE_SALT = 0x5bf03635;
 
 export type TextFont = "3x3" | "3x4";
 
@@ -25,6 +37,19 @@ export interface IdenticonOptions {
 	textBackgroundColor?: number | string;
 	textColor?: number | string;
 	symetry?: "axial" | "central" | "none";
+	/**
+	 * Force perfect mirror symmetry at odd sizes too, default: false.
+	 *
+	 * Off (the default), the mirror axis always sits between two cells, so an odd
+	 * size is an even identicon with one extra column on the left — very slightly
+	 * asymmetric, but the middle never moves and resizing only ever adds cells at
+	 * the outer edges.
+	 *
+	 * On, every size satisfies `c(x) === c(width-1-x)`. The axis has to move onto a
+	 * cell at odd sizes to manage that, so the pattern shifts whenever the size
+	 * crosses between even and odd.
+	 */
+	strictSymetry?: boolean;
 	text?: string;
 	textFont?: TextFont; // pixel font used for `text`, default: "3x4"
 	textPadding?: number;
@@ -46,6 +71,8 @@ export default class Identicon {
 		text?: string;
 	};
 	rand: Random;
+	/** Drives the positional hash, so the grid is independent of the PRNG state. */
+	seedInt: number;
 	public imageData: (string | undefined)[] = [];
 	LETTER_PADDING_COLOR: string | undefined;
 	LETTER_COLOR = "#fff";
@@ -57,6 +84,7 @@ export default class Identicon {
 		const seed =
 			options.seed || Math.floor(Math.random() * Math.pow(10, 16)).toString(16);
 		this.rand = new Random(seed);
+		this.seedInt = hashStringToInteger(seed);
 
 		const numberOfColors = options.numberOfColors || 1;
 
@@ -83,6 +111,7 @@ export default class Identicon {
 			pixelSize: 4,
 			shape: "square",
 			symetry: "axial",
+			strictSymetry: false,
 			textPosition: "bottom-right",
 			textFont: "3x4",
 			textPadding: 1,
@@ -186,76 +215,71 @@ export default class Identicon {
 		return weights;
 	}
 
-	// This function creates an array of data for an image, which should be displayed as a symmetric (mirrored) pattern.
-	// This is especially useful for creating icons or patterns with symmetric characteristics.
+	/**
+	 * Maps a grid position to the coordinate its colour is looked up by.
+	 *
+	 * This is where both symmetry and size-independence come from. A mirrored
+	 * identicon is one half-pattern (axial) or one quadrant (central) drawn
+	 * repeatedly, so the coordinate indexes *that* unit rather than the grid.
+	 * Mirrored cells resolve to the same coordinate and so share a colour for
+	 * free — there is no mirroring step at all.
+	 *
+	 * One rule covers every case: measure outward from the mirror axis. Index 0
+	 * always sits against the axis, so a resize appends cells at the outer edges and
+	 * the middle never moves.
+	 *
+	 * The only difference between the modes is where the axis is. Mirrored axes put
+	 * it in the middle; `none` puts it at the right edge, which right-aligns the
+	 * pattern and grows it leftward — the same half-pattern an axial identicon
+	 * mirrors, just shown once.
+	 *
+	 * `y` is used directly on axes with no mirror, so height grows downward and the
+	 * top rows stay fixed.
+	 */
+	private cellCoordinate(x: number, y: number): [number, number] {
+		const { width, height, symetry, strictSymetry } = this.options;
+
+		// Either keep the axis between cells (middle never moves, odd sizes gain a
+		// column on one side) or pin perfect symmetry at every size (pattern shifts
+		// when the size crosses parity).
+		const mirrored = (i: number, size: number) =>
+			strictSymetry
+				? symmetricDistance(i, size)
+				: axisDistance(i, mirrorAxis(size));
+
+		switch (symetry) {
+			case "axial":
+				// Mirrored horizontally: columns grow out to the left and right of a
+				// fixed middle, rows are appended at the bottom.
+				return [mirrored(x, width), y];
+			case "central":
+				// Mirrored on both axes: one quadrant, growing out from a fixed centre.
+				return [mirrored(x, width), mirrored(y, height)];
+			default:
+				// Axis at the right edge: not mirrored, so the whole width is the
+				// pattern, right-aligned and growing leftward.
+				return [axisDistance(x, width), y];
+		}
+	}
+
+	/**
+	 * Builds the grid by hashing each cell's coordinate, so the pattern is decided
+	 * by the seed alone. Resizing reveals or hides cells rather than redrawing
+	 * them: see hash.ts for why, and identicon.stability.test.ts for exactly which
+	 * resizes are guaranteed.
+	 */
 	createImageData() {
-		const { height, width, colors, symetry } = this.options;
-
-		// The width of the image data that will be generated is half of the total width, rounded up.
-		// This is because the image will be symmetric, so we only need to generate data for half of it.
-		// const dataWidth = Math.ceil(width / 2);
-		const dataWidth = width;
-		const halfWidth = Math.ceil(width / 2);
-
-		// The remaining width after generating the original data will be the mirror width.
-		// This part of the image will be a mirror image of the first part.
-		const mirrorDataWidth = width - halfWidth;
-
-		// Initialize an empty array to store the image data.
-		let data: (string | undefined)[] = [];
+		const { height, width, colors } = this.options;
 
 		const weights = this.calculateColorsWeights(colors.length);
-		// const thresholds = this.calculateThresholds(colors.length);
+		const data: (string | undefined)[] = new Array(width * height);
 
-		const colorsCount = Array(colors.length).fill(0);
-
-		// Loop through each pixel row.
 		for (let y = 0; y < height; y++) {
-			// For each row, create a new array to store the pixel data.
-			let row = [];
-
-			for (let x = 0; x < dataWidth; x++) {
-				if (symetry === "axial" || symetry === "central") {
-					if (x >= halfWidth) {
-						break;
-					}
-				}
-
-				// With weights
-				const color = this.rand.pickRandomChoice(colors, weights);
-
-				// With thresholds
-				// const r = this.rand.next();
-				// // Find the appropriate color based on the random value
-				// let color: string;
-				// for (let i = 0; i < thresholds.length; i++) {
-				// 	if (r <= thresholds[i]) {
-				// 		color = colors[i];
-				// 		break;
-				// 	}
-				// }
-
-				row[x] = color;
-				colorsCount[colors.indexOf(color)]++;
+			for (let x = 0; x < width; x++) {
+				const [cx, cy] = this.cellCoordinate(x, y);
+				const value = cellValue(this.seedInt, cx, cy);
+				data[y * width + x] = pickByWeight(colors, weights, value);
 			}
-
-			if (symetry === "axial" || symetry === "central") {
-				// Create the mirror part of the row by taking the original row data, slicing it,
-				// and reversing the order. This creates the mirror effect.
-				const r = row.slice(0, mirrorDataWidth).reverse();
-				// Combine the original row data with the mirrored data to get the full row.
-				row = [...row, ...r];
-			}
-
-			data = [...data, ...row];
-		}
-
-		if (symetry === "central") {
-			const halfHeight = Math.ceil(data.length / 2);
-			const halfHeightData = data.slice(0, halfHeight);
-			const mirrorHeight = data.length - halfHeight;
-			const mirrorHeightData = data.slice(0, mirrorHeight);
-			data = [...halfHeightData, ...mirrorHeightData.reverse()];
 		}
 
 		return data;
@@ -464,7 +488,10 @@ export default class Identicon {
 					col * pixelSize + pixelSize / 2,
 					row * pixelSize + pixelSize / 2,
 					pixelSize / 2,
-					this.rand.nextRange(3, 20)
+					// Positional, like the colour, so the side count of a given cell does
+					// not shift when the grid is resized. Its own salt keeps it
+					// uncorrelated with the colour drawn at the same coordinate.
+					3 + Math.floor(cellValue(this.seedInt ^ SHAPE_SALT, col, row) * 18)
 				);
 			}
 		}

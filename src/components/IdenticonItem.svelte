@@ -7,6 +7,7 @@
 		width: number;
 		pixelSize: number;
 		symetry: IdenticonOptions["symetry"];
+		strictSymetry: boolean;
 		colors: string[];
 		textColor: string;
 		textPosition: IdenticonOptions["textPosition"];
@@ -85,6 +86,7 @@
 		numberOfColors={params.numberOfColors}
 		colors={params.colors}
 		symetry={params.symetry}
+		strictSymetry={params.strictSymetry}
 		text={params.text.length ? params.text : undefined}
 		textColor={params.textColor}
 		textPosition={params.textPosition}

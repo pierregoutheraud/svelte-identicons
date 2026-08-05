@@ -60,18 +60,21 @@ describe("extractGrid", () => {
 		);
 	});
 
-	it("changes the layout when the number of colors changes", () => {
-		// Why numberOfColors has to survive the URL round-trip verbatim.
+	it("changes the layout when the number of generated colors changes", () => {
+		// With no explicit palette, numberOfColors decides how many colours exist,
+		// and the palette size remaps value -> colour through the weights.
 		expect(grid({ numberOfColors: 2 })).not.toEqual(
 			grid({ numberOfColors: 3 })
 		);
 	});
 
-	it("changes the layout when numberOfColors disagrees with colors.length", () => {
-		// The playground can emit exactly this pair, and the engine burns PRNG
-		// draws on a default palette it then discards.
+	it("ignores numberOfColors once an explicit palette is given", () => {
+		// It used to matter: numberOfColors burned PRNG draws ahead of the grid, so
+		// the playground emitting numberOfColors=2 beside three custom colours
+		// silently produced a different pattern. Positional hashing removed that
+		// coupling — the grid no longer touches the PRNG at all.
 		const colors = ["#111111", "#222222", "#333333"];
-		expect(grid({ numberOfColors: 2, colors })).not.toEqual(
+		expect(grid({ numberOfColors: 2, colors })).toEqual(
 			grid({ numberOfColors: 3, colors })
 		);
 	});

@@ -13,6 +13,8 @@
 		canvasElement?: HTMLCanvasElement | undefined;
 		colors?: string[] | undefined;
 		symetry?: "axial" | "central" | "none" | undefined;
+		/** Force perfect mirror symmetry at odd sizes too. See IdenticonOptions. */
+		strictSymetry?: boolean;
 		textColor?: IdenticonOptions["textColor"];
 		textBackgroundColor?: IdenticonOptions["textBackgroundColor"];
 		textPosition?: IdenticonOptions["textPosition"];
@@ -43,6 +45,7 @@
 		canvasElement = $bindable(),
 		colors = undefined,
 		symetry = "axial",
+		strictSymetry = false,
 		textColor = undefined,
 		textBackgroundColor = undefined,
 		textPosition = "bottom-right",
@@ -75,6 +78,7 @@
 			// proxy out of the engine.
 			colors: colors ? [...colors] : undefined,
 			symetry,
+			strictSymetry,
 			text,
 			textPosition,
 			textFont,

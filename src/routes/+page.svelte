@@ -49,6 +49,7 @@
 			colors: params.get("colors")?.length
 				? params.get("colors")!.split(",")
 				: [],
+			strictSymetry: params.get("strictSymetry") === "1",
 			symetry: (params.get("symetry") ||
 				"axial") as IdenticonOptions["symetry"],
 			textColor: "#ffffff",
@@ -70,6 +71,7 @@
 			height: params.height?.toString() || "1",
 			width: params.width?.toString() || "1",
 			symetry: params.symetry as string,
+			strictSymetry: params.strictSymetry ? "1" : "",
 			colors: params.colors.join(","),
 			textColor: params.textColor,
 			textPosition: params.textPosition as string,
@@ -336,6 +338,16 @@
 
 				<label class="radio">
 					<input
+						type="radio"
+						bind:group={params.symetry}
+						name="symetry"
+						value="none"
+					/>
+					<p>None</p>
+				</label>
+
+				<label class="radio">
+					<input
 						id="symetry-central"
 						type="radio"
 						bind:group={params.symetry}
@@ -346,6 +358,18 @@
 				</label>
 			</div>
 		</div>
+
+		{#if params.symetry !== "none"}
+			<div class="fieldset fieldset-radio">
+				<p>Strict symetry</p>
+				<div>
+					<label class="radio">
+						<input type="checkbox" bind:checked={params.strictSymetry} />
+						<p>Mirror exactly at odd widths (pattern shifts on parity)</p>
+					</label>
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	<div class="item">
