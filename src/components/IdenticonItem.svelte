@@ -8,6 +8,7 @@
 		pixelSize: number;
 		symetry: IdenticonOptions["symetry"];
 		symetryAxis: IdenticonOptions["symetryAxis"];
+		tileSize: number;
 		colors: string[];
 		textColor: string;
 		textPosition: IdenticonOptions["textPosition"];
@@ -87,6 +88,7 @@
 		colors={params.colors}
 		symetry={params.symetry}
 		symetryAxis={params.symetryAxis}
+		tileSize={params.tileSize}
 		text={params.text.length ? params.text : undefined}
 		textColor={params.textColor}
 		textPosition={params.textPosition}

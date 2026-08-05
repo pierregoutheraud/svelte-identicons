@@ -37,7 +37,21 @@ export interface IdenticonOptions {
 	numberOfColors?: number;
 	textBackgroundColor?: number | string;
 	textColor?: number | string;
-	symetry?: "axial" | "central" | "none";
+	/**
+	 * Which axes are mirrored, default: "axial".
+	 *
+	 * - `"none"` — no symmetry
+	 * - `"axial"` — mirrored left-right
+	 * - `"horizontal"` — mirrored top-bottom
+	 * - `"central"` — mirrored on both axes (4-fold)
+	 * - `"kaleidoscope"` — both axes plus the diagonal (8-fold); reads as a mandala,
+	 *   and only looks 8-fold when width and height are close
+	 * - `"tile"` — no mirror; repeats a `tileSize` block instead
+	 */
+	symetry?:
+		"axial" | "horizontal" | "central" | "kaleidoscope" | "tile" | "none";
+	/** Edge of the repeating block when `symetry` is "tile", default: 5. */
+	tileSize?: number;
 	/**
 	 * Where the mirror axis sits, default: "gap".
 	 *
@@ -119,6 +133,7 @@ export default class Identicon {
 			shape: "square",
 			symetry: "axial",
 			symetryAxis: "gap",
+			tileSize: 5,
 			textPosition: "bottom-right",
 			textFont: "3x4",
 			textPadding: 1,
@@ -235,16 +250,12 @@ export default class Identicon {
 	 * always sits against the axis, so a resize appends cells at the outer edges and
 	 * the middle never moves.
 	 *
-	 * The only difference between the modes is where the axis is. Mirrored axes put
-	 * it in the middle; `none` puts it at the right edge, which right-aligns the
-	 * pattern and grows it leftward — the same half-pattern an axial identicon
-	 * mirrors, just shown once.
-	 *
-	 * `y` is used directly on axes with no mirror, so height grows downward and the
-	 * top rows stay fixed.
+	 * The only difference between most modes is which axes have a mirror. An axis
+	 * without one uses the index directly, anchored at the far end so it still grows
+	 * away from the middle: `x` counts from the right edge, `y` from the top.
 	 */
 	private cellCoordinate(x: number, y: number): [number, number] {
-		const { width, height, symetry, symetryAxis } = this.options;
+		const { width, height, symetry, symetryAxis, tileSize } = this.options;
 
 		const mirrored = (i: number, size: number) => {
 			switch (symetryAxis) {
@@ -259,15 +270,36 @@ export default class Identicon {
 
 		switch (symetry) {
 			case "axial":
-				// Mirrored horizontally: columns grow out to the left and right of a
-				// fixed middle, rows are appended at the bottom.
+				// Mirrored left-right: columns grow out either side of a fixed middle,
+				// rows are appended at the bottom.
 				return [mirrored(x, width), y];
+			case "horizontal":
+				// Mirrored top-bottom: rows grow out either side of a fixed middle row,
+				// columns are appended on the left.
+				return [axisDistance(x, width), mirrored(y, height)];
 			case "central":
 				// Mirrored on both axes: one quadrant, growing out from a fixed centre.
 				return [mirrored(x, width), mirrored(y, height)];
+			case "kaleidoscope": {
+				// Both mirrors plus the diagonal. Sorting the two distances makes the
+				// coordinate invariant under swapping them, which is the diagonal
+				// reflection, and that turns 4-fold symmetry into 8-fold. Only reads as
+				// 8-fold when the grid is roughly square, since otherwise the two
+				// distances cover different ranges.
+				const dx = mirrored(x, width);
+				const dy = mirrored(y, height);
+				return [Math.min(dx, dy), Math.max(dx, dy)];
+			}
+			case "tile": {
+				// Translational rather than mirrored: one tile repeated. The only mode
+				// with no axis to place, so it is exactly stable at every size in both
+				// directions with no parity caveat at all.
+				const size = Math.max(1, Math.floor(tileSize));
+				return [x % size, y % size];
+			}
 			default:
-				// Axis at the right edge: not mirrored, so the whole width is the
-				// pattern, right-aligned and growing leftward.
+				// No mirror at all: the whole width is the pattern, right-aligned so it
+				// grows leftward.
 				return [axisDistance(x, width), y];
 		}
 	}

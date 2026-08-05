@@ -49,6 +49,7 @@
 			colors: params.get("colors")?.length
 				? params.get("colors")!.split(",")
 				: [],
+			tileSize: parseInt(params.get("tileSize") || "5"),
 			symetryAxis: (params.get("symetryAxis") ||
 				"gap") as IdenticonOptions["symetryAxis"],
 			symetry: (params.get("symetry") ||
@@ -73,6 +74,7 @@
 			width: params.width?.toString() || "1",
 			symetry: params.symetry as string,
 			symetryAxis: params.symetryAxis as string,
+			tileSize: params.tileSize?.toString() || "5",
 			colors: params.colors.join(","),
 			textColor: params.textColor,
 			textPosition: params.textPosition as string,
@@ -324,43 +326,38 @@
 			</p>
 		{/if}
 
-		<div class="fieldset fieldset-radio">
-			<p>Symetry</p>
-			<div>
-				<label class="radio">
-					<input
-						type="radio"
-						bind:group={params.symetry}
-						name="symetry"
-						value="axial"
-					/>
-					<p>Axial</p>
-				</label>
-
-				<label class="radio">
-					<input
-						type="radio"
-						bind:group={params.symetry}
-						name="symetry"
-						value="none"
-					/>
-					<p>None</p>
-				</label>
-
-				<label class="radio">
-					<input
-						id="symetry-central"
-						type="radio"
-						bind:group={params.symetry}
-						name="symetry"
-						value="central"
-					/>
-					<p>Central</p>
+		<div class="fieldsets-row">
+			<div class="fieldset">
+				<label class="input-field">
+					<p>Symetry</p>
+					<select bind:value={params.symetry}>
+						<option value="none">None</option>
+						<option value="axial">Axial (left-right)</option>
+						<option value="horizontal">Horizontal (top-bottom)</option>
+						<option value="central">Central (4-fold)</option>
+						<option value="kaleidoscope">Kaleidoscope (8-fold)</option>
+						<option value="tile">Tile (repeat)</option>
+					</select>
 				</label>
 			</div>
+
+			{#if params.symetry === "tile"}
+				<div class="fieldset">
+					<label class="input-field">
+						<p>Tile size</p>
+						<input
+							type="number"
+							value={params.tileSize}
+							min="1"
+							max="50"
+							oninput={(e) => handleChangeInputNumber(e, "tileSize")}
+						/>
+					</label>
+				</div>
+			{/if}
 		</div>
 
-		{#if params.symetry !== "none"}
+		{#if params.symetry !== "none" && params.symetry !== "tile"}
 			<div class="fieldset">
 				<label class="input-field">
 					<p>Mirror axis</p>
@@ -470,18 +467,6 @@
 	}
 	.fieldsets-row .fieldset {
 		flex: 1;
-	}
-
-	.fieldset-radio > div {
-		display: flex;
-		gap: 20px;
-		margin-right: 10px;
-	}
-
-	label.radio {
-		display: flex;
-		align-items: center;
-		gap: 6px;
 	}
 
 	.colors {

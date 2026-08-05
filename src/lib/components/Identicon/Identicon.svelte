@@ -12,7 +12,9 @@
 		numberOfColors?: number;
 		canvasElement?: HTMLCanvasElement | undefined;
 		colors?: string[] | undefined;
-		symetry?: "axial" | "central" | "none" | undefined;
+		symetry?: IdenticonOptions["symetry"];
+		/** Tile edge when symetry is "tile". See IdenticonOptions.tileSize. */
+		tileSize?: number;
 		/** Where the mirror axis sits. See IdenticonOptions.symetryAxis. */
 		symetryAxis?: IdenticonOptions["symetryAxis"];
 		textColor?: IdenticonOptions["textColor"];
@@ -46,6 +48,7 @@
 		colors = undefined,
 		symetry = "axial",
 		symetryAxis = "gap",
+		tileSize = 5,
 		textColor = undefined,
 		textBackgroundColor = undefined,
 		textPosition = "bottom-right",
@@ -79,6 +82,7 @@
 			colors: colors ? [...colors] : undefined,
 			symetry,
 			symetryAxis,
+			tileSize,
 			text,
 			textPosition,
 			textFont,
