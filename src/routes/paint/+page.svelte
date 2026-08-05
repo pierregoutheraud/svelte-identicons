@@ -407,6 +407,8 @@
 						height={params.height}
 						pixelSize={4}
 						symetry={params.symetry}
+						symetryAxis={params.symetryAxis}
+						tileSize={params.tileSize}
 						numberOfColors={params.numberOfColors}
 						colors={params.colors.length ? params.colors : undefined}
 						text={params.text || undefined}

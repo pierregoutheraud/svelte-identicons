@@ -6,6 +6,8 @@ export interface PaintParams {
 	width: number;
 	height: number;
 	symetry: IdenticonOptions["symetry"];
+	symetryAxis: IdenticonOptions["symetryAxis"];
+	tileSize: number;
 	// Kept verbatim: it drives 6 PRNG draws per color for the default palette,
 	// even when custom colors are passed, so it is part of the layout identity.
 	numberOfColors: number;
@@ -51,6 +53,8 @@ export const DEFAULT_PAINT_PARAMS: PaintParams = {
 	width: 30,
 	height: 30,
 	symetry: "axial",
+	symetryAxis: "gap",
+	tileSize: 5,
 	numberOfColors: 3,
 	colors: [],
 	text: "",
@@ -79,6 +83,8 @@ export function extractGrid(
 		width: params.width,
 		height: params.height,
 		symetry: params.symetry,
+		symetryAxis: params.symetryAxis,
+		tileSize: params.tileSize,
 		numberOfColors: params.numberOfColors,
 		colors: params.colors.length ? params.colors : undefined,
 		text: params.text || undefined,
@@ -273,6 +279,8 @@ export function serializePaintParams(params: PaintParams): string {
 		width: String(params.width),
 		height: String(params.height),
 		symetry: String(params.symetry),
+		symetryAxis: String(params.symetryAxis ?? DEFAULT_PAINT_PARAMS.symetryAxis),
+		tileSize: String(params.tileSize || DEFAULT_PAINT_PARAMS.tileSize),
 		// The engine reads it as `options.numberOfColors || 1`, so normalising a
 		// NaN (which the playground URL can produce) to 1 keeps the same layout.
 		numberOfColors: String(params.numberOfColors || 1),
@@ -295,6 +303,9 @@ export function parsePaintParams(search: URLSearchParams): PaintParams {
 		height: intOr(search.get("height"), DEFAULT_PAINT_PARAMS.height),
 		symetry: (search.get("symetry") ||
 			DEFAULT_PAINT_PARAMS.symetry) as IdenticonOptions["symetry"],
+		symetryAxis: (search.get("symetryAxis") ||
+			DEFAULT_PAINT_PARAMS.symetryAxis) as IdenticonOptions["symetryAxis"],
+		tileSize: intOr(search.get("tileSize"), DEFAULT_PAINT_PARAMS.tileSize),
 		numberOfColors: intOr(
 			search.get("numberOfColors"),
 			DEFAULT_PAINT_PARAMS.numberOfColors
@@ -326,6 +337,12 @@ export function layoutKey(params: PaintParams): string {
 		params.width,
 		params.height,
 		params.symetry,
+		// Where the mirror axis sits always changes the layout.
+		params.symetryAxis,
+		// tileSize only changes the layout in "tile" mode, so it is folded in
+		// conditionally: otherwise editing it would discard painting progress in the
+		// five modes where it does nothing.
+		params.symetry === "tile" ? params.tileSize : 0,
 		// Only the effective count matters, not numberOfColors itself: the engine
 		// hashes cell coordinates rather than consuming a random stream, so
 		// numberOfColors no longer shifts the pattern — it only decides how many

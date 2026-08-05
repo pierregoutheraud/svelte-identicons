@@ -220,6 +220,19 @@ function clampColorCount(raw: string | null): number {
 	return Math.min(MAX_FAVICON_COLORS, Math.max(MIN_FAVICON_COLORS, parsed));
 }
 
+/**
+ * Narrows a full identicon symetry down to one a favicon supports.
+ *
+ * The engine has modes this tool does not offer ("horizontal", "kaleidoscope",
+ * "tile"), so callers need somewhere to land. This exists so that downgrade is
+ * explicit at the call site rather than hidden behind a cast that the type
+ * checker cannot see through — and it reuses the same list `parseFaviconParams`
+ * validates against, so the two cannot drift apart.
+ */
+export function toFaviconSymetry(value: string | undefined): FaviconSymetry {
+	return allowedValue(value ?? null, SYMETRIES, "axial");
+}
+
 function allowedValue<T extends string>(
 	value: string | null,
 	allowed: readonly T[],

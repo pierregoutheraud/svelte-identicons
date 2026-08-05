@@ -21,9 +21,10 @@
 	import { type IdenticonOptions } from "$lib/engine/Identicon.js";
 	import {
 		serializeFaviconParams,
-		type FaviconSymetry
+		toFaviconSymetry
 	} from "./favicon/favicon.helpers.js";
 	import { serializePaintParams } from "./paint/paint.helpers.js";
+	import Button from "./Button.svelte";
 	import Code from "./Code.svelte";
 
 	interface Props {
@@ -43,6 +44,8 @@
 			width: params.width,
 			height: params.height,
 			symetry: params.symetry,
+			symetryAxis: params.symetryAxis,
+			tileSize: params.tileSize,
 			numberOfColors: params.numberOfColors,
 			colors: params.colors,
 			text: params.text,
@@ -57,7 +60,7 @@
 			seed: params.seed,
 			numberOfColors: Math.min(5, Math.max(2, params.numberOfColors || 3)),
 			colors: params.colors.slice(0, 5),
-			symetry: (params.symetry || "axial") as FaviconSymetry,
+			symetry: toFaviconSymetry(params.symetry),
 			shape: "square"
 		})}`
 	);
@@ -97,10 +100,10 @@
 	/>
 	<div class="actions">
 		<Code {params} />
-		<button onclick={handleDownload}>Download image</button>
-		<button onclick={() => handleCopyLink(params)}>Copy link</button>
-		<a class="paint" href={paintHref}>Paint this</a>
-		<a class="favicon" href={faviconHref}>Create favicon</a>
+		<Button onclick={handleDownload}>Download image</Button>
+		<Button onclick={() => handleCopyLink(params)}>Copy link</Button>
+		<Button href={paintHref}>Paint this</Button>
+		<Button href={faviconHref} variant="outline">Create favicon</Button>
 	</div>
 </div>
 
@@ -118,32 +121,5 @@
 		gap: 18px;
 		flex-wrap: wrap;
 		justify-content: center;
-	}
-
-	.paint,
-	.favicon {
-		display: flex;
-		align-items: center;
-		height: 33px;
-		padding: 3px 12px 0;
-		background: gold;
-		color: black;
-		text-decoration: none;
-		transition: all 300ms ease;
-	}
-
-	.paint:hover {
-		background: goldenrod;
-	}
-
-	.favicon {
-		border: 1px solid white;
-		background: transparent;
-		color: white;
-	}
-
-	.favicon:hover {
-		border-color: gold;
-		color: gold;
 	}
 </style>

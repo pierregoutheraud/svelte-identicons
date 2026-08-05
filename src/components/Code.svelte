@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Params } from "./IdenticonItem.svelte";
+	import Button from "./Button.svelte";
 
 	interface Props {
 		params: Params;
@@ -17,7 +18,13 @@
 			? `numberOfColors={${params.numberOfColors}}`
 			: `colors={[${params.colors}]}`
 	}
-  symetry="${params.symetry}"
+  symetry="${params.symetry}"${
+		params.symetry !== "none" &&
+		params.symetry !== "tile" &&
+		params.symetryAxis !== "gap"
+			? `\n  symetryAxis="${params.symetryAxis}"`
+			: ``
+	}${params.symetry === "tile" ? `\n  tileSize={${params.tileSize}}` : ``}
   text=${params.text?.length ? `"${params.text}"` : `{undefined}`}${
 		params.text?.length ? `\n  textFont="${params.textFont}"` : ``
 	}
@@ -31,7 +38,7 @@
 </script>
 
 <div class="Code">
-	<button onclick={handleClick}>Copy code</button>
+	<Button onclick={handleClick}>Copy code</Button>
 	<pre><code class="language-pascal">{code}</code></pre>
 </div>
 

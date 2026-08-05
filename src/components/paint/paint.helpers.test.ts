@@ -18,6 +18,8 @@ const BASE: PaintParams = {
 	width: 30,
 	height: 30,
 	symetry: "axial",
+	symetryAxis: "gap",
+	tileSize: 5,
 	numberOfColors: 3,
 	colors: [],
 	text: "",
