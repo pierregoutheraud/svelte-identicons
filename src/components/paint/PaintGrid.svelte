@@ -16,6 +16,9 @@
 		/** The physical canvas, to the same scale as the squares. 0 hides it. */
 		sheetWidthPx?: number;
 		sheetHeightPx?: number;
+		sheetColor?: string;
+		/** False renders only the finished artwork, without painting guides. */
+		showGuides?: boolean;
 		onToggleCell?: (index: number) => void;
 	}
 
@@ -32,6 +35,8 @@
 		symetry = "axial",
 		sheetWidthPx = 0,
 		sheetHeightPx = 0,
+		sheetColor = "#ffffff",
+		showGuides = true,
 		onToggleCell = () => undefined
 	}: Props = $props();
 
@@ -43,7 +48,9 @@
 
 	const columns = $derived(Array.from({ length: width }, (_, i) => i + 1));
 	const rows = $derived(Array.from({ length: height }, (_, i) => i + 1));
-	const isolating = $derived(activeColor !== null);
+	// A final preview always shows the complete artwork, regardless of which
+	// paint is isolated in the editor.
+	const isolating = $derived(showGuides && activeColor !== null);
 	// The fold is only meaningful for axial symmetry. "central" mirrors on a flat
 	// index, which is a 180 degree rotation, not a line you can draw.
 	const foldColumn = $derived(symetry === "axial" ? Math.ceil(width / 2) : 0);
@@ -79,31 +86,38 @@
 
 <div
 	class="PaintGrid"
-	style="--cell:{cellPx}px; --columns:{width}; --fold:{foldColumn}; --pad-x:{padX}px; --pad-y:{padY}px; --sheet-w:{sheetWidthPx}px; --sheet-h:{sheetHeightPx}px"
+	class:preview={!showGuides}
+	style="--cell:{cellPx}px; --columns:{width}; --fold:{foldColumn}; --pad-x:{padX}px; --pad-y:{padY}px; --sheet-w:{sheetWidthPx}px; --sheet-h:{sheetHeightPx}px; --sheet-color:{sheetColor}"
 >
-	<div class="corner"></div>
+	{#if showGuides}
+		<div class="corner"></div>
 
-	<div class="labels-x">
-		{#each columns as column}
-			<span class="label" class:strong={column % 5 === 0}>
-				{column % 5 === 0 || column === 1 ? column : ""}
-			</span>
-		{/each}
-	</div>
+		<div class="labels-x">
+			{#each columns as column}
+				<span class="label" class:strong={column % 5 === 0}>
+					{column % 5 === 0 || column === 1 ? column : ""}
+				</span>
+			{/each}
+		</div>
 
-	<div class="labels-y">
-		{#each rows as row}
-			<span
-				class="label"
-				class:strong={row % 5 === 0}
-				class:focused={focusRow === row}
-			>
-				{row % 5 === 0 || row === 1 ? row : ""}
-			</span>
-		{/each}
-	</div>
+		<div class="labels-y">
+			{#each rows as row}
+				<span
+					class="label"
+					class:strong={row % 5 === 0}
+					class:focused={focusRow === row}
+				>
+					{row % 5 === 0 || row === 1 ? row : ""}
+				</span>
+			{/each}
+		</div>
+	{/if}
 
-	<div class="cells" use:delegateClick={onToggleCell}>
+	<div
+		class="cells"
+		aria-hidden={showGuides ? undefined : "true"}
+		use:delegateClick={onToggleCell}
+	>
 		{#if showSheet}
 			<div class="sheet"></div>
 		{/if}
@@ -119,14 +133,16 @@
 				class:dim={isolating && !isActive}
 				class:active={isActive}
 				class:painted={painted[index]}
-				class:current={focusIndex === index}
-				class:outside={focusRow !== null && focusRow !== row + 1}
-				class:edge-x={(column + 1) % 5 === 0 && column + 1 !== width}
-				class:edge-y={(row + 1) % 5 === 0 && row + 1 !== height}
+				class:current={showGuides && focusIndex === index}
+				class:outside={showGuides && focusRow !== null && focusRow !== row + 1}
+				class:edge-x={showGuides &&
+					(column + 1) % 5 === 0 &&
+					column + 1 !== width}
+				class:edge-y={showGuides && (row + 1) % 5 === 0 && row + 1 !== height}
 				style={isolating && !isActive ? "" : `background:${color}`}
 				data-index={index}
-				disabled={isBase || (isolating && !isActive)}
-				title="row {row + 1}, column {column + 1}"
+				disabled={!showGuides || isBase || (isolating && !isActive)}
+				title={showGuides ? `row ${row + 1}, column ${column + 1}` : undefined}
 			>
 				{#if painted[index] && isActive}
 					<svg viewBox="0 0 10 10" aria-hidden="true">
@@ -136,7 +152,7 @@
 			</button>
 		{/each}
 
-		{#if foldColumn > 0}
+		{#if showGuides && foldColumn > 0}
 			<div class="fold"></div>
 		{/if}
 	</div>
@@ -152,6 +168,10 @@
 		padding: var(--pad-y) var(--pad-x);
 	}
 
+	.PaintGrid.preview {
+		display: block;
+	}
+
 	/* The physical canvas, drawn to the same scale as the squares. */
 	.sheet {
 		position: absolute;
@@ -160,7 +180,7 @@
 		transform: translate(-50%, -50%);
 		width: var(--sheet-w);
 		height: var(--sheet-h);
-		background: #ffffff;
+		background: var(--sheet-color);
 		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
 		/* Behind everything, so the label gutters do not need a z-index of their
 		   own: that would make them a stacking context and cut their blend mode
@@ -222,6 +242,11 @@
 		outline: 1px solid #3a3f47;
 	}
 
+	.preview .cells {
+		background: transparent;
+		outline: none;
+	}
+
 	.cell {
 		/* The global stylesheet makes every button a gold 33px pill. */
 		all: unset;
@@ -234,6 +259,11 @@
 		border-bottom: 1px solid rgba(0, 0, 0, 0.22);
 		cursor: pointer;
 		z-index: 1;
+	}
+
+	.preview .cell {
+		border: none;
+		cursor: default;
 	}
 
 	.cell:disabled {

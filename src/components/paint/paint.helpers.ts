@@ -64,6 +64,20 @@ export const DEFAULT_PAINT_PARAMS: PaintParams = {
 	pixelSize: 10
 };
 
+export interface PaintSurfaceParams {
+	squareCm: number;
+	canvasWidthCm: number;
+	canvasHeightCm: number;
+	canvasColor: string;
+}
+
+export const DEFAULT_PAINT_SURFACE_PARAMS: PaintSurfaceParams = {
+	squareCm: 2,
+	canvasWidthCm: 60,
+	canvasHeightCm: 60,
+	canvasColor: "#ffffff"
+};
+
 /**
  * Runs the real engine rather than reimplementing it, so what you paint is
  * exactly what the playground drew.
@@ -273,7 +287,10 @@ export function round(n: number, decimals = 2): number {
  * pixelSize and blanks numberOfColors when custom colors are set. numberOfColors
  * changes the layout, so a lossy round-trip means painting a different picture.
  */
-export function serializePaintParams(params: PaintParams): string {
+export function serializePaintParams(
+	params: PaintParams,
+	surface?: PaintSurfaceParams
+): string {
 	const search = new URLSearchParams({
 		seed: params.seed,
 		width: String(params.width),
@@ -291,6 +308,14 @@ export function serializePaintParams(params: PaintParams): string {
 		textFont: String(params.textFont ?? DEFAULT_PAINT_PARAMS.textFont),
 		pixelSize: String(params.pixelSize || 10)
 	});
+
+	if (surface) {
+		search.set("squareCm", String(surface.squareCm));
+		search.set("canvasWidthCm", String(surface.canvasWidthCm));
+		search.set("canvasHeightCm", String(surface.canvasHeightCm));
+		search.set("canvasColor", surface.canvasColor);
+	}
+
 	return `?${search.toString()}`;
 }
 
@@ -321,8 +346,37 @@ export function parsePaintParams(search: URLSearchParams): PaintParams {
 	};
 }
 
+export function parsePaintSurfaceParams(
+	search: URLSearchParams
+): PaintSurfaceParams {
+	const canvasColor = search.get("canvasColor") || "";
+
+	return {
+		squareCm: numberOr(
+			search.get("squareCm"),
+			DEFAULT_PAINT_SURFACE_PARAMS.squareCm
+		),
+		canvasWidthCm: numberOr(
+			search.get("canvasWidthCm"),
+			DEFAULT_PAINT_SURFACE_PARAMS.canvasWidthCm
+		),
+		canvasHeightCm: numberOr(
+			search.get("canvasHeightCm"),
+			DEFAULT_PAINT_SURFACE_PARAMS.canvasHeightCm
+		),
+		canvasColor: /^#[0-9a-f]{6}$/i.test(canvasColor)
+			? canvasColor
+			: DEFAULT_PAINT_SURFACE_PARAMS.canvasColor
+	};
+}
+
 function intOr(value: string | null, fallback: number): number {
 	const parsed = parseInt(value || "", 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function numberOr(value: string | null, fallback: number): number {
+	const parsed = Number(value);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 

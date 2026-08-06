@@ -9,8 +9,10 @@ import {
 	layoutKey,
 	measure,
 	parsePaintParams,
+	parsePaintSurfaceParams,
 	serializePaintParams,
-	type PaintParams
+	type PaintParams,
+	type PaintSurfaceParams
 } from "./paint.helpers.js";
 
 const BASE: PaintParams = {
@@ -147,6 +149,55 @@ describe("extractGrid", () => {
 });
 
 describe("serializePaintParams / parsePaintParams", () => {
+	it("round-trips physical square and canvas settings", () => {
+		const surface: PaintSurfaceParams = {
+			squareCm: 1.25,
+			canvasWidthCm: 42.5,
+			canvasHeightCm: 59.4,
+			canvasColor: "#203040"
+		};
+		const search = new URLSearchParams(serializePaintParams(BASE, surface));
+
+		expect(parsePaintSurfaceParams(search)).toEqual(surface);
+	});
+
+	it("uses safe defaults for invalid physical settings", () => {
+		const parsed = parsePaintSurfaceParams(
+			new URLSearchParams(
+				"?squareCm=0&canvasWidthCm=nope&canvasHeightCm=-1&canvasColor=red"
+			)
+		);
+
+		expect(parsed).toEqual({
+			squareCm: 2,
+			canvasWidthCm: 60,
+			canvasHeightCm: 60,
+			canvasColor: "#ffffff"
+		});
+	});
+
+	it("round-trips every parameter available on the playground", () => {
+		const params: PaintParams = {
+			seed: "all-options",
+			width: 17,
+			height: 19,
+			symetry: "tile",
+			symetryAxis: "column",
+			tileSize: 7,
+			numberOfColors: 4,
+			colors: ["#112233", "#445566", "#778899", "#aabbcc"],
+			text: "Codex 5",
+			textColor: "#fedcba",
+			textPosition: "top-left",
+			textFont: "3x3",
+			pixelSize: 13
+		};
+
+		expect(
+			parsePaintParams(new URLSearchParams(serializePaintParams(params)))
+		).toEqual(params);
+	});
+
 	it("round-trips a params set whose color count disagrees with numberOfColors", () => {
 		const params: PaintParams = {
 			...BASE,

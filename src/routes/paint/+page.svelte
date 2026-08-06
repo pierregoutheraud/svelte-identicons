@@ -14,6 +14,7 @@
 		layoutKey,
 		measure,
 		parsePaintParams,
+		parsePaintSurfaceParams,
 		randomHex,
 		round,
 		serializePaintParams,
@@ -26,6 +27,7 @@
 	// goto() with a URL built from this, so deriving it from the URL turns that
 	// effect into an infinite navigation loop.
 	let params = $state<PaintParams>(parsePaintParams($page.url.searchParams));
+	const initialSurface = parsePaintSurfaceParams($page.url.searchParams);
 
 	let painted = $state<boolean[]>([]);
 	// What the user picked. All writes go here; `activeColor` below is the value
@@ -35,9 +37,11 @@
 	let stepIndex = $state(-1);
 	let stepList = $state<HTMLElement | undefined>();
 	let cellPx = $state(20);
-	let squareCm = $state(2);
-	let canvasWidthCm = $state(60);
-	let canvasHeightCm = $state(60);
+	let squareCm = $state(initialSurface.squareCm);
+	let canvasWidthCm = $state(initialSurface.canvasWidthCm);
+	let canvasHeightCm = $state(initialSurface.canvasHeightCm);
+	let canvasColor = $state(initialSurface.canvasColor);
+	let showGuides = $state(true);
 	let showHowTo = $state(false);
 	let verifyStatus = $state("");
 
@@ -82,7 +86,12 @@
 	});
 
 	$effect(() => {
-		const url = serializePaintParams(params);
+		const url = serializePaintParams(params, {
+			squareCm,
+			canvasWidthCm,
+			canvasHeightCm,
+			canvasColor
+		});
 
 		// bind:value on the seed input fires this on every keystroke, and goto is
 		// an async router operation.
@@ -237,15 +246,17 @@
 		params = { ...params, colors, numberOfColors: colors.length };
 	}
 
-	function handleChangeGridSize(key: "width" | "height", event: Event) {
+	type NumericParam = "width" | "height" | "tileSize" | "numberOfColors";
+
+	function handleChangeNumber(key: NumericParam, event: Event) {
 		const value = (event.target as HTMLInputElement).valueAsNumber;
 
 		if (!Number.isFinite(value) || value < 1) {
 			return;
 		}
 
-		// Grid dimensions feed the PRNG, so this redraws the pattern. layoutKey
-		// picks the change up and swaps in that pattern's own progress.
+		// Layout-affecting values are part of layoutKey, so changing one swaps in
+		// that pattern's own saved progress.
 		params = { ...params, [key]: value };
 	}
 
@@ -372,6 +383,14 @@
 		<p class="sub">
 			{params.width}x{params.height} &middot; seed <b>{params.seed}</b>
 		</p>
+		<button
+			class="preview-toggle"
+			class:on={!showGuides}
+			aria-pressed={!showGuides}
+			onclick={() => (showGuides = !showGuides)}
+		>
+			{showGuides ? "Preview final" : "Show guides"}
+		</button>
 		<a class="back" href={`/${serializePaintParams(params)}`}>Playground</a>
 	</header>
 
@@ -390,6 +409,8 @@
 					{cellPx}
 					{sheetWidthPx}
 					{sheetHeightPx}
+					sheetColor={canvasColor}
+					{showGuides}
 					symetry={params.symetry}
 					onToggleCell={handleToggleCell}
 				/>
@@ -447,6 +468,19 @@
 					Enter the hex of each tube you own. Changing a hex does not move a
 					single cell. Changing the <i>number</i> of colors redraws the pattern.
 				</p>
+
+				{#if !params.colors.length}
+					<label class="row">
+						<span class="tag">Generated colors</span>
+						<input
+							type="number"
+							min="1"
+							max="10"
+							value={params.numberOfColors}
+							oninput={(event) => handleChangeNumber("numberOfColors", event)}
+						/>
+					</label>
+				{/if}
 
 				{#each palette as entry}
 					{@const editable = engineColors.indexOf(entry.color) !== -1}
@@ -592,7 +626,7 @@
 			{/if}
 
 			<section class="panel">
-				<h2>Identicon</h2>
+				<h2>Identicon settings</h2>
 				<div class="row">
 					<span class="tag">W</span>
 					<input
@@ -600,7 +634,7 @@
 						min="1"
 						max="100"
 						value={params.width}
-						oninput={(e) => handleChangeGridSize("width", e)}
+						oninput={(event) => handleChangeNumber("width", event)}
 					/>
 					<span class="tag">H</span>
 					<input
@@ -608,15 +642,84 @@
 						min="1"
 						max="100"
 						value={params.height}
-						oninput={(e) => handleChangeGridSize("height", e)}
+						oninput={(event) => handleChangeNumber("height", event)}
 					/>
 					<span class="tag muted">squares</span>
 				</div>
+				<label class="row">
+					<span class="tag">Symetry</span>
+					<select bind:value={params.symetry}>
+						<option value="none">None</option>
+						<option value="axial">Axial (left-right)</option>
+						<option value="horizontal">Horizontal (top-bottom)</option>
+						<option value="central">Central (4-fold)</option>
+						<option value="kaleidoscope">Kaleidoscope (8-fold)</option>
+						<option value="tile">Tile (repeat)</option>
+					</select>
+				</label>
+				{#if params.symetry === "tile"}
+					<label class="row">
+						<span class="tag">Tile size</span>
+						<input
+							type="number"
+							min="1"
+							max="50"
+							value={params.tileSize}
+							oninput={(event) => handleChangeNumber("tileSize", event)}
+						/>
+					</label>
+				{:else if params.symetry !== "none"}
+					<label class="row">
+						<span class="tag">Mirror axis</span>
+						<select bind:value={params.symetryAxis}>
+							<option value="gap">Between columns</option>
+							<option value="column">On a column</option>
+							<option value="exact">Exact mirror</option>
+						</select>
+					</label>
+				{/if}
+				<div class="row">
+					<label class="inline-control">
+						<span class="tag">Text</span>
+						<input type="text" bind:value={params.text} placeholder="No text" />
+					</label>
+					<label class="color-control" title="Text color">
+						<span class="sr-only">Text color</span>
+						<input type="color" bind:value={params.textColor} />
+					</label>
+				</div>
+				<div class="row">
+					<label class="inline-control">
+						<span class="tag">Position</span>
+						<select bind:value={params.textPosition}>
+							<option value="top-center">Top center</option>
+							<option value="top-left">Top left</option>
+							<option value="top-right">Top right</option>
+							<option value="bottom-center">Bottom center</option>
+							<option value="bottom-left">Bottom left</option>
+							<option value="bottom-right">Bottom right</option>
+							<option value="center">Center</option>
+						</select>
+					</label>
+					<label class="inline-control compact">
+						<span class="tag">Font</span>
+						<select bind:value={params.textFont}>
+							<option value="3x4">3x4</option>
+							<option value="3x3">3x3</option>
+						</select>
+					</label>
+				</div>
+				{#if params.textFont === "3x3" && /[^a-zA-Z]/.test(params.text)}
+					<p class="hint">
+						The 3x3 font only includes A-Z; unsupported characters are dropped.
+					</p>
+				{/if}
 				<div class="row">
 					<span class="tag">Square</span>
 					<input
 						type="number"
 						bind:value={squareCm}
+						aria-label="Square size in centimetres"
 						min="0.1"
 						step="0.1"
 						class="narrow"
@@ -640,11 +743,26 @@
 
 			<section class="panel">
 				<h2>Canvas</h2>
+				<label class="row">
+					<span class="tag">Color</span>
+					<input type="color" bind:value={canvasColor} />
+					<span class="hex">{canvasColor}</span>
+				</label>
 				<div class="row">
 					<span class="tag">W</span>
-					<input type="number" bind:value={canvasWidthCm} min="1" />
+					<input
+						type="number"
+						bind:value={canvasWidthCm}
+						aria-label="Canvas width in centimetres"
+						min="1"
+					/>
 					<span class="tag">H</span>
-					<input type="number" bind:value={canvasHeightCm} min="1" />
+					<input
+						type="number"
+						bind:value={canvasHeightCm}
+						aria-label="Canvas height in centimetres"
+						min="1"
+					/>
 					<span class="tag muted">cm</span>
 				</div>
 				<dl class="measures">
@@ -724,8 +842,20 @@
 	}
 
 	.back {
-		margin-left: auto;
 		color: gold;
+	}
+
+	.preview-toggle {
+		margin-left: auto;
+		background: #2e333b;
+		color: #b8bfc9;
+		white-space: nowrap;
+	}
+
+	.preview-toggle:hover,
+	.preview-toggle.on {
+		background: gold;
+		color: #22252b;
 	}
 
 	.body {
@@ -788,9 +918,44 @@
 	}
 
 	.row input[type="text"],
-	.row input[type="number"] {
+	.row input[type="number"],
+	.row select {
 		min-width: 0;
 		flex: 1;
+	}
+
+	.inline-control {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		flex: 1;
+	}
+
+	.inline-control select {
+		min-width: 0;
+		flex: 1;
+	}
+
+	.inline-control.compact {
+		flex: 0 0 auto;
+	}
+
+	.color-control {
+		display: flex;
+		flex: 0 0 auto;
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	.hint {
@@ -1052,6 +1217,30 @@
 
 		.controls {
 			width: 100%;
+		}
+	}
+
+	@media (max-width: 600px) {
+		.header {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			align-items: center;
+			gap: 8px 12px;
+		}
+
+		.header h1,
+		.preview-toggle {
+			justify-self: start;
+		}
+
+		.header .sub,
+		.header .back {
+			justify-self: end;
+			text-align: right;
+		}
+
+		.preview-toggle {
+			margin-left: 0;
 		}
 	}
 </style>

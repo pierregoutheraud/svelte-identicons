@@ -54,7 +54,7 @@
 				"gap") as IdenticonOptions["symetryAxis"],
 			symetry: (params.get("symetry") ||
 				"axial") as IdenticonOptions["symetry"],
-			textColor: "#ffffff",
+			textColor: params.get("textColor") || "#ffffff",
 			textPosition:
 				(params.get("textPosition") as IdenticonOptions["textPosition"]) ||
 				"bottom-right",
@@ -72,6 +72,7 @@
 				: params.numberOfColors.toString(),
 			height: params.height?.toString() || "1",
 			width: params.width?.toString() || "1",
+			pixelSize: params.pixelSize?.toString() || "10",
 			symetry: params.symetry as string,
 			symetryAxis: params.symetryAxis as string,
 			tileSize: params.tileSize?.toString() || "5",
