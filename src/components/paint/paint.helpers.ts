@@ -378,29 +378,32 @@ export function buildTapePattern({
 				(unit.side === "bottom" && unit.line === height && marginYCm === 0)
 			: (unit.side === "left" && unit.line === 0 && marginXCm === 0) ||
 				(unit.side === "right" && unit.line === width && marginXCm === 0);
+	const laneFor = (unit: TapeUnit) =>
+		unit.orientation === "horizontal"
+			? unit.side === "top"
+				? unit.line - tapeWidthSquares
+				: unit.line
+			: unit.side === "left"
+				? unit.line - tapeWidthSquares
+				: unit.line;
 
 	const groups = new Map<string, TapeUnit[]>();
 	for (const unit of units) {
 		if (atCanvasEdge(unit)) continue;
-		const key = `${unit.orientation}|${unit.line}|${unit.side}`;
+		// Group by the physical lane occupied by the tape, not by which factory
+		// edge defines a boundary. When the tape spans exactly the distance
+		// between two grid lines, its two long edges can serve different squares.
+		const lane = Math.round(laneFor(unit) * 1e9) / 1e9;
+		const key = `${unit.orientation}|${lane}`;
 		groups.set(key, [...(groups.get(key) || []), unit]);
 	}
 
 	const rectangleFor = (unit: TapeUnit): TapeRectangle => {
 		const extendedStart = unit.start - endExtensionSquares;
 		const length = unit.end - unit.start + endExtensionSquares * 2;
-		const x =
-			unit.orientation === "horizontal"
-				? extendedStart
-				: unit.side === "left"
-					? unit.line - tapeWidthSquares
-					: unit.line;
-		const y =
-			unit.orientation === "vertical"
-				? extendedStart
-				: unit.side === "top"
-					? unit.line - tapeWidthSquares
-					: unit.line;
+		const lane = laneFor(unit);
+		const x = unit.orientation === "horizontal" ? extendedStart : lane;
+		const y = unit.orientation === "vertical" ? extendedStart : lane;
 
 		return {
 			x,

@@ -485,6 +485,18 @@ describe("buildTapePattern", () => {
 		expect(vertical.map((segment) => segment.lengthCm)).toEqual([5, 5]);
 	});
 
+	it("reuses one full-square-width strip between staggered squares", () => {
+		const pattern = tape(["x", "b", "b", "b", "b", "x"], 2, 3, {
+			tapeWidthCm: 1
+		});
+		const sharedLane = pattern.segments.filter(
+			(segment) => segment.orientation === "horizontal" && segment.y === 1
+		);
+
+		expect(sharedLane).toHaveLength(1);
+		expect(sharedLane[0]).toMatchObject({ x: -1, width: 4, height: 1 });
+	});
+
 	it("does not merge across a gap when the longer strip would cover paint", () => {
 		const pattern = tape(
 			["b", "b", "x", "b", "b", "x", "b", "b", "b", "x"],
