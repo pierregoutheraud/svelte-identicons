@@ -7,6 +7,7 @@
 	import { tick } from "svelte";
 	import {
 		buildPalette,
+		buildTapePattern,
 		colorCells,
 		extractGrid,
 		findDuplicateColors,
@@ -18,9 +19,22 @@
 		randomHex,
 		round,
 		serializePaintParams,
+		tapeEndExtensionCm,
 		type PaintParams,
 		type PaletteEntry
 	} from "../../components/paint/paint.helpers.js";
+
+	interface TapeBatchState {
+		selected: number[];
+		generated: number[] | null;
+		showOverlay: boolean;
+	}
+
+	const EMPTY_TAPE_BATCH: TapeBatchState = {
+		selected: [],
+		generated: null,
+		showOverlay: false
+	};
 
 	// Must stay $state initialised once from the URL. It must NEVER become
 	// $derived(parsePaintParams(page.url.searchParams)): the effect below calls
@@ -36,14 +50,20 @@
 	// Position in the current color's list of squares. -1 = not started.
 	let stepIndex = $state(-1);
 	let stepList = $state<HTMLElement | undefined>();
-	let cellPx = $state(20);
+	let cellPx = $state(28);
 	let squareCm = $state(initialSurface.squareCm);
 	let canvasWidthCm = $state(initialSurface.canvasWidthCm);
 	let canvasHeightCm = $state(initialSurface.canvasHeightCm);
 	let canvasColor = $state(initialSurface.canvasColor);
+	let tapeWidthCm = $state(initialSurface.tapeWidthCm);
+	let tapeBatches = $state<Record<string, TapeBatchState>>({});
 	let showGuides = $state(true);
 	let showHowTo = $state(false);
 	let verifyStatus = $state("");
+	const actualTapeWidthCm = $derived(
+		Number.isFinite(tapeWidthCm) && tapeWidthCm > 0 ? tapeWidthCm : 0.1
+	);
+	const tapeEndExtension = $derived(tapeEndExtensionCm(squareCm));
 
 	// Neither is $state: both exist only to remember what the last run did. As
 	// $state they would be read and written by their own effect, which is the
@@ -83,6 +103,7 @@
 
 		loadedKey = nextKey;
 		painted = loadProgress(nextKey, size);
+		tapeBatches = {};
 	});
 
 	$effect(() => {
@@ -90,7 +111,8 @@
 			squareCm,
 			canvasWidthCm,
 			canvasHeightCm,
-			canvasColor
+			canvasColor,
+			tapeWidthCm: actualTapeWidthCm
 		});
 
 		// bind:value on the seed input fires this on every keystroke, and goto is
@@ -124,6 +146,19 @@
 			? colorCells(grid, params.width, activeColor)
 			: []
 	);
+	// The set of grid indexes is a stable identity for a colour even when its hex
+	// changes. Layout changes clear the map in the effect above.
+	const tapeBatchKey = $derived(steps.map((step) => step.index).join(","));
+	const activeTapeBatch = $derived(
+		tapeBatchKey
+			? (tapeBatches[tapeBatchKey] ?? EMPTY_TAPE_BATCH)
+			: EMPTY_TAPE_BATCH
+	);
+	const selectedTapeCells = $derived(activeTapeBatch.selected);
+	const selectedTapeSet = $derived(new Set(selectedTapeCells));
+	const generatedTapeCells = $derived(activeTapeBatch.generated ?? []);
+	const hasGeneratedTape = $derived(activeTapeBatch.generated !== null);
+	const showTape = $derived(hasGeneratedTape && activeTapeBatch.showOverlay);
 	const currentStep = $derived(
 		stepIndex >= 0 ? (steps[stepIndex] ?? null) : null
 	);
@@ -139,6 +174,35 @@
 			canvasWidthCm,
 			canvasHeightCm
 		})
+	);
+	const tapePattern = $derived(
+		activeEntry &&
+			!activeEntry.isBase &&
+			measurements.fits &&
+			hasGeneratedTape &&
+			generatedTapeCells.length
+			? buildTapePattern({
+					grid,
+					width: params.width,
+					height: params.height,
+					targetColor: activeEntry.color,
+					targetCells: generatedTapeCells,
+					squareCm,
+					canvasWidthCm,
+					canvasHeightCm,
+					tapeWidthCm: actualTapeWidthCm
+				})
+			: {
+					segments: [],
+					totalLengthCm: 0,
+					overlapCells: []
+				}
+	);
+	const showTapeOverlay = $derived(
+		showTape &&
+			showGuides &&
+			Boolean(activeEntry && !activeEntry.isBase) &&
+			measurements.fits
 	);
 
 	// One scale for both: the zoom slider sets pixels per square, and the canvas
@@ -258,6 +322,78 @@
 		// Layout-affecting values are part of layoutKey, so changing one swaps in
 		// that pattern's own saved progress.
 		params = { ...params, [key]: value };
+	}
+
+	function handleSquareSize(event: Event) {
+		const value = (event.currentTarget as HTMLInputElement).valueAsNumber;
+		if (!Number.isFinite(value) || value <= 0) return;
+		squareCm = value;
+	}
+
+	function handleTapeWidth(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const value = input.valueAsNumber;
+		// A number field is briefly empty while its contents are replaced. Do not
+		// write a fallback into the DOM mid-edit or typing `1` can become `0.11`.
+		if (!Number.isFinite(value) || value <= 0) return;
+		tapeWidthCm = value;
+	}
+
+	function restoreTapeWidth(event: FocusEvent) {
+		const input = event.currentTarget as HTMLInputElement;
+		if (!Number.isFinite(input.valueAsNumber) || input.valueAsNumber <= 0) {
+			input.value = String(actualTapeWidthCm);
+		}
+	}
+
+	function setActiveTapeBatch(next: TapeBatchState) {
+		if (!tapeBatchKey) return;
+		tapeBatches[tapeBatchKey] = next;
+	}
+
+	function updateTapeSelection(index: number, checked: boolean) {
+		const next = new Set(selectedTapeCells);
+		if (checked) next.add(index);
+		else next.delete(index);
+
+		setActiveTapeBatch({
+			selected: [...next].sort((a, b) => a - b),
+			generated: null,
+			showOverlay: false
+		});
+	}
+
+	function selectAllTapeSquares() {
+		setActiveTapeBatch({
+			selected: steps.map((step) => step.index),
+			generated: null,
+			showOverlay: false
+		});
+	}
+
+	function clearTapeSquares() {
+		setActiveTapeBatch({
+			selected: [],
+			generated: null,
+			showOverlay: false
+		});
+	}
+
+	function generateTapePattern() {
+		if (!measurements.fits || !selectedTapeCells.length) return;
+		setActiveTapeBatch({
+			selected: [...selectedTapeCells],
+			generated: [...selectedTapeCells],
+			showOverlay: true
+		});
+	}
+
+	function toggleTapeOverlay() {
+		if (!hasGeneratedTape) return;
+		setActiveTapeBatch({
+			...activeTapeBatch,
+			showOverlay: !activeTapeBatch.showOverlay
+		});
 	}
 
 	function handleSelectColor(color: string | null) {
@@ -410,6 +546,10 @@
 					{sheetWidthPx}
 					{sheetHeightPx}
 					sheetColor={canvasColor}
+					tapeSegments={tapePattern.segments}
+					showTape={showTapeOverlay}
+					tapeSelectedCells={selectedTapeCells}
+					tapeSelectionMode={Boolean(activeEntry && !activeEntry.isBase)}
 					{showGuides}
 					symetry={params.symetry}
 					onToggleCell={handleToggleCell}
@@ -585,6 +725,121 @@
 				</div>
 			</section>
 
+			{#if activeEntry && !activeEntry.isBase}
+				<section class="panel tape-panel">
+					<h2>Tape pattern &middot; {activeEntry.label}</h2>
+					<div class="row">
+						<label class="inline-control">
+							<span class="tag">Tape width</span>
+							<input
+								type="number"
+								value={actualTapeWidthCm}
+								oninput={handleTapeWidth}
+								onblur={restoreTapeWidth}
+								aria-label="Tape width in centimetres"
+								min="0.1"
+								step="0.1"
+							/>
+							<span class="tag muted">cm</span>
+						</label>
+					</div>
+					<p class="hint">
+						Use the tape's long factory edge for every painted boundary. Each
+						strip extends {round(tapeEndExtension, 2)} cm past each end so perpendicular
+						strips overlap at the corners.
+					</p>
+
+					{#if !measurements.fits}
+						<p class="warning">
+							The artwork must fit the canvas before a physical tape pattern can
+							be calculated.
+						</p>
+					{/if}
+
+					<div class="tape-selection-heading">
+						<p class="tape-selection-count">
+							<b>{selectedTapeCells.length}</b> / {steps.length} squares selected
+						</p>
+						<div class="row">
+							<button
+								class="ghost"
+								disabled={selectedTapeCells.length === steps.length}
+								onclick={selectAllTapeSquares}>Select all</button
+							>
+							<button
+								class="ghost"
+								disabled={!selectedTapeCells.length}
+								onclick={clearTapeSquares}>Clear</button
+							>
+						</div>
+					</div>
+
+					<ol class="tape-square-list" aria-label="Squares for tape pattern">
+						{#each steps as step, index}
+							<li class:selected={selectedTapeSet.has(step.index)}>
+								<label>
+									<input
+										type="checkbox"
+										checked={selectedTapeSet.has(step.index)}
+										onchange={(event) =>
+											updateTapeSelection(
+												step.index,
+												event.currentTarget.checked
+											)}
+									/>
+									<span class="tape-square-number">{index + 1}</span>
+									<span>row {step.row}, column {step.column}</span>
+									{#if painted[step.index]}
+										<span class="badge">painted</span>
+									{/if}
+								</label>
+							</li>
+						{/each}
+					</ol>
+
+					<div class="row tape-actions">
+						<button
+							disabled={!measurements.fits || !selectedTapeCells.length}
+							onclick={generateTapePattern}>Generate tape</button
+						>
+						{#if hasGeneratedTape}
+							<button
+								class="ghost tape-toggle"
+								class:on={showTape}
+								aria-pressed={showTape}
+								onclick={toggleTapeOverlay}
+							>
+								{showTape ? "Hide tape" : "Show tape"}
+							</button>
+						{/if}
+					</div>
+
+					{#if hasGeneratedTape}
+						<p class="hint">
+							Optimized for {generatedTapeCells.length} selected
+							{generatedTapeCells.length === 1 ? "square" : "squares"}. Align
+							the long factory edges to the highlighted boundaries and keep
+							every scissor-cut end beyond its corner.
+						</p>
+						<p class="tape-summary">
+							<b>{tapePattern.segments.length}</b> strips &middot;
+							<b>{round(tapePattern.totalLengthCm, 1)} cm</b> minimum tape
+						</p>
+
+						{#if tapePattern.overlapCells.length}
+							<p class="tape-warning">
+								With {round(actualTapeWidthCm, 2)} cm tape and the end overlap, the
+								mask reaches
+								{tapePattern.overlapCells.length} exposed {activeEntry.label}
+								{tapePattern.overlapCells.length === 1 ? "square" : "squares"}.
+								Do not rely on a scissor-cut edge here; split these inside
+								corners into a separate paint pass.
+							</p>
+						{/if}
+					{/if}
+				</section>
+			{/if}
+
 			{#if steps.length}
 				<section class="panel">
 					<h2>Square guide</h2>
@@ -718,7 +973,8 @@
 					<span class="tag">Square</span>
 					<input
 						type="number"
-						bind:value={squareCm}
+						value={squareCm}
+						oninput={handleSquareSize}
 						aria-label="Square size in centimetres"
 						min="0.1"
 						step="0.1"
@@ -800,8 +1056,9 @@
 							{baseEntry?.count} cells are then finished.
 						</li>
 						<li>
-							Tick every cell along all four edges, then rule the every-5th
-							lines harder. A miscount stays trapped in one 5x5 block.
+							Pick a non-base color and open its tape pattern. Use each strip's
+							long factory edge to outline the color, and let every scissor-cut
+							end run past the corner underneath the perpendicular strip.
 						</li>
 						{#if params.symetry === "axial"}
 							<li>
@@ -810,8 +1067,9 @@
 							</li>
 						{/if}
 						<li>
-							Paint one color per session, biggest count first. Pick a color
-							above to hide everything else, then tap cells off as you go.
+							Paint the exposed squares, remove the tape, and repeat for each
+							color. Pick a color above to isolate it and tap cells off as you
+							go.
 						</li>
 					</ol>
 				{/if}
@@ -1107,6 +1365,107 @@
 
 	button.ghost:hover {
 		background: #3a3f47;
+	}
+
+	button.ghost:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.tape-toggle.on,
+	.tape-toggle.on:hover {
+		background: #87ceeb;
+		color: #14242c;
+	}
+
+	.tape-summary {
+		font-size: 13px;
+		color: #b8bfc9;
+	}
+
+	.tape-summary b {
+		color: #87ceeb;
+	}
+
+	.tape-warning {
+		font-size: 12px;
+		line-height: 1.5;
+		color: #2a1011;
+		background: #ff7773;
+		padding: 8px;
+	}
+
+	.tape-selection-heading {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+
+	.tape-selection-heading .row {
+		flex-wrap: nowrap;
+	}
+
+	.tape-selection-count {
+		font-size: 12px;
+		color: #b8bfc9;
+	}
+
+	.tape-selection-count b {
+		color: #87ceeb;
+	}
+
+	.tape-square-list {
+		list-style: none;
+		max-height: 340px;
+		overflow: auto;
+		border-top: 1px solid #2e333b;
+		user-select: none;
+	}
+
+	.tape-square-list li {
+		border-bottom: 1px solid #2e333b;
+	}
+
+	.tape-square-list li.selected {
+		background: rgba(135, 206, 235, 0.12);
+	}
+
+	.tape-square-list label {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 3px 4px;
+		font-size: 12px;
+		line-height: 1.1;
+		color: #b8bfc9;
+		cursor: pointer;
+	}
+
+	.tape-square-list input {
+		width: 14px;
+		height: 14px;
+		padding: 0;
+		flex: 0 0 14px;
+		accent-color: #87ceeb;
+	}
+
+	.tape-square-number {
+		width: 24px;
+		color: #87ceeb;
+		font-weight: 700;
+	}
+
+	.tape-square-list .badge {
+		margin-left: auto;
+	}
+
+	.tape-actions {
+		align-items: stretch;
+	}
+
+	.tape-actions > button:first-child {
+		flex: 1;
 	}
 
 	.guide {

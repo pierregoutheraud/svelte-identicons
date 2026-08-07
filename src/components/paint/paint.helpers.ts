@@ -69,14 +69,27 @@ export interface PaintSurfaceParams {
 	canvasWidthCm: number;
 	canvasHeightCm: number;
 	canvasColor: string;
+	tapeWidthCm: number;
 }
 
 export const DEFAULT_PAINT_SURFACE_PARAMS: PaintSurfaceParams = {
 	squareCm: 2,
 	canvasWidthCm: 60,
 	canvasHeightCm: 60,
-	canvasColor: "#ffffff"
+	canvasColor: "#ffffff",
+	tapeWidthCm: 2.5
 };
+
+export const TAPE_LENGTH_ALLOWANCE_RATIO = 0.1;
+export const MIN_TAPE_END_EXTENSION_CM = 1;
+
+export function tapeEndExtensionCm(squareCm: number): number {
+	return Math.max(
+		MIN_TAPE_END_EXTENSION_CM,
+		(Number.isFinite(squareCm) && squareCm > 0 ? squareCm : 0) *
+			(TAPE_LENGTH_ALLOWANCE_RATIO / 2)
+	);
+}
 
 /**
  * Runs the real engine rather than reimplementing it, so what you paint is
@@ -199,6 +212,383 @@ export function formatCell(step: CellStep): string {
 	return `row ${step.row} column ${step.column}`;
 }
 
+export type TapeOrientation = "horizontal" | "vertical";
+export type TapeSide = "top" | "right" | "bottom" | "left";
+
+export interface TapeSegment {
+	orientation: TapeOrientation;
+	side: TapeSide;
+	/** Physical tape rectangle in grid-square units. Values may be fractional. */
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** Tape rectangle measured from the physical canvas top-left. */
+	xCm: number;
+	yCm: number;
+	widthCm: number;
+	heightCm: number;
+	lengthCm: number;
+	/** Coordinate of the long factory edge that defines the painted boundary. */
+	edgeCm: number;
+	/** Active-color squares touched by the tape's unavoidable overhang. */
+	overlapCells: number[];
+}
+
+export interface TapePattern {
+	segments: TapeSegment[];
+	totalLengthCm: number;
+	overlapCells: number[];
+}
+
+interface TapeUnit {
+	orientation: TapeOrientation;
+	line: number;
+	start: number;
+	end: number;
+	side: TapeSide;
+}
+
+interface TapeRectangle {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	length: number;
+}
+
+/** Builds the minimum straight perimeter runs around one paint colour. */
+export function buildTapePattern({
+	grid,
+	width,
+	height,
+	targetColor,
+	targetCells,
+	squareCm,
+	canvasWidthCm,
+	canvasHeightCm,
+	tapeWidthCm
+}: {
+	grid: string[];
+	width: number;
+	height: number;
+	targetColor: string;
+	/** Optional grid indexes to include in this paint pass. Omit for the whole colour. */
+	targetCells?: number[];
+	squareCm: number;
+	canvasWidthCm: number;
+	canvasHeightCm: number;
+	tapeWidthCm: number;
+}): TapePattern {
+	const empty: TapePattern = {
+		segments: [],
+		totalLengthCm: 0,
+		overlapCells: []
+	};
+	if (
+		!targetColor ||
+		width < 1 ||
+		height < 1 ||
+		!Number.isFinite(squareCm) ||
+		squareCm <= 0 ||
+		!Number.isFinite(canvasWidthCm) ||
+		canvasWidthCm <= 0 ||
+		!Number.isFinite(canvasHeightCm) ||
+		canvasHeightCm <= 0 ||
+		!Number.isFinite(tapeWidthCm) ||
+		tapeWidthCm <= 0
+	) {
+		return empty;
+	}
+
+	const marginXCm = (canvasWidthCm - width * squareCm) / 2;
+	const marginYCm = (canvasHeightCm - height * squareCm) / 2;
+	if (marginXCm < 0 || marginYCm < 0) return empty;
+
+	const tapeWidthSquares = tapeWidthCm / squareCm;
+	const endExtensionSquares = tapeEndExtensionCm(squareCm) / squareCm;
+	const selectedTargets =
+		targetCells === undefined
+			? undefined
+			: new Set(
+					targetCells.filter(
+						(index) =>
+							Number.isInteger(index) &&
+							index >= 0 &&
+							index < width * height &&
+							grid[index] === targetColor
+					)
+				);
+	if (selectedTargets?.size === 0) return empty;
+	const isTarget = (row: number, column: number) =>
+		row >= 0 &&
+		row < height &&
+		column >= 0 &&
+		column < width &&
+		grid[row * width + column] === targetColor &&
+		(selectedTargets === undefined ||
+			selectedTargets.has(row * width + column));
+	const units: TapeUnit[] = [];
+
+	for (let row = 0; row < height; row++) {
+		for (let column = 0; column < width; column++) {
+			if (!isTarget(row, column)) continue;
+			if (!isTarget(row - 1, column)) {
+				units.push({
+					orientation: "horizontal",
+					line: row,
+					start: column,
+					end: column + 1,
+					side: "top"
+				});
+			}
+			if (!isTarget(row + 1, column)) {
+				units.push({
+					orientation: "horizontal",
+					line: row + 1,
+					start: column,
+					end: column + 1,
+					side: "bottom"
+				});
+			}
+			if (!isTarget(row, column - 1)) {
+				units.push({
+					orientation: "vertical",
+					line: column,
+					start: row,
+					end: row + 1,
+					side: "left"
+				});
+			}
+			if (!isTarget(row, column + 1)) {
+				units.push({
+					orientation: "vertical",
+					line: column + 1,
+					start: row,
+					end: row + 1,
+					side: "right"
+				});
+			}
+		}
+	}
+
+	const atCanvasEdge = (unit: TapeUnit) =>
+		unit.orientation === "horizontal"
+			? (unit.side === "top" && unit.line === 0 && marginYCm === 0) ||
+				(unit.side === "bottom" && unit.line === height && marginYCm === 0)
+			: (unit.side === "left" && unit.line === 0 && marginXCm === 0) ||
+				(unit.side === "right" && unit.line === width && marginXCm === 0);
+
+	const groups = new Map<string, TapeUnit[]>();
+	for (const unit of units) {
+		if (atCanvasEdge(unit)) continue;
+		const key = `${unit.orientation}|${unit.line}|${unit.side}`;
+		groups.set(key, [...(groups.get(key) || []), unit]);
+	}
+
+	const rectangleFor = (unit: TapeUnit): TapeRectangle => {
+		const extendedStart = unit.start - endExtensionSquares;
+		const length = unit.end - unit.start + endExtensionSquares * 2;
+		const x =
+			unit.orientation === "horizontal"
+				? extendedStart
+				: unit.side === "left"
+					? unit.line - tapeWidthSquares
+					: unit.line;
+		const y =
+			unit.orientation === "vertical"
+				? extendedStart
+				: unit.side === "top"
+					? unit.line - tapeWidthSquares
+					: unit.line;
+
+		return {
+			x,
+			y,
+			width: unit.orientation === "horizontal" ? length : tapeWidthSquares,
+			height: unit.orientation === "horizontal" ? tapeWidthSquares : length,
+			length
+		};
+	};
+	const overlapFor = (unit: TapeUnit) => {
+		const rectangle = rectangleFor(unit);
+		return targetOverlap(
+			rectangle.x,
+			rectangle.y,
+			rectangle.width,
+			rectangle.height,
+			grid,
+			width,
+			height,
+			targetColor,
+			selectedTargets
+		);
+	};
+
+	const merged: TapeUnit[] = [];
+	for (const group of groups.values()) {
+		group.sort((a, b) => a.start - b.start);
+		const contiguous: TapeUnit[] = [];
+		let current: TapeUnit | undefined;
+		for (const unit of group) {
+			if (current && unit.start <= current.end) {
+				current.end = Math.max(current.end, unit.end);
+			} else {
+				current = { ...unit };
+				contiguous.push(current);
+			}
+		}
+
+		// A strip may continue across gaps between boundaries on the same line.
+		// Minimise the number of strips, but never let the joined footprint cover
+		// more of the target colour than the separate strips already would.
+		const baseOverlaps = contiguous.map((unit) => overlapFor(unit).areas);
+		const bestCount = new Array<number>(contiguous.length + 1).fill(Infinity);
+		const bestLength = new Array<number>(contiguous.length + 1).fill(Infinity);
+		const nextIndex = new Array<number>(contiguous.length).fill(0);
+		bestCount[contiguous.length] = 0;
+		bestLength[contiguous.length] = 0;
+
+		for (let start = contiguous.length - 1; start >= 0; start--) {
+			const allowedAreas = new Map<number, number>();
+			for (let end = start; end < contiguous.length; end++) {
+				for (const [index, area] of baseOverlaps[end]) {
+					allowedAreas.set(index, (allowedAreas.get(index) || 0) + area);
+				}
+
+				const candidate: TapeUnit = {
+					...contiguous[start],
+					end: contiguous[end].end
+				};
+				const candidateOverlap = overlapFor(candidate);
+				const addsTargetCoverage = [...candidateOverlap.areas].some(
+					([index, area]) => area > (allowedAreas.get(index) || 0) + 1e-9
+				);
+				if (addsTargetCoverage) continue;
+
+				const count = 1 + bestCount[end + 1];
+				const length = rectangleFor(candidate).length + bestLength[end + 1];
+				if (
+					count < bestCount[start] ||
+					(count === bestCount[start] && length < bestLength[start])
+				) {
+					bestCount[start] = count;
+					bestLength[start] = length;
+					nextIndex[start] = end + 1;
+				}
+			}
+		}
+
+		for (let start = 0; start < contiguous.length;) {
+			const next = nextIndex[start] || start + 1;
+			merged.push({
+				...contiguous[start],
+				end: contiguous[next - 1].end
+			});
+			start = next;
+		}
+	}
+
+	const overlapCells = new Set<number>();
+	const segments = merged
+		.map((unit): TapeSegment => {
+			const rectangle = rectangleFor(unit);
+			const runOverlaps = overlapFor(unit).cells;
+			runOverlaps.forEach((index) => overlapCells.add(index));
+
+			return {
+				orientation: unit.orientation,
+				side: unit.side,
+				x: rectangle.x,
+				y: rectangle.y,
+				width: rectangle.width,
+				height: rectangle.height,
+				xCm: marginXCm + rectangle.x * squareCm,
+				yCm: marginYCm + rectangle.y * squareCm,
+				widthCm: rectangle.width * squareCm,
+				heightCm: rectangle.height * squareCm,
+				lengthCm: rectangle.length * squareCm,
+				edgeCm:
+					(unit.orientation === "horizontal" ? marginYCm : marginXCm) +
+					unit.line * squareCm,
+				overlapCells: runOverlaps
+			};
+		})
+		.sort(
+			(a, b) =>
+				(a.orientation === b.orientation
+					? 0
+					: a.orientation === "horizontal"
+						? -1
+						: 1) ||
+				a.edgeCm - b.edgeCm ||
+				a.xCm - b.xCm ||
+				a.yCm - b.yCm
+		);
+
+	return {
+		segments,
+		totalLengthCm: segments.reduce(
+			(total, segment) => total + segment.lengthCm,
+			0
+		),
+		overlapCells: [...overlapCells].sort((a, b) => a - b)
+	};
+}
+
+function targetOverlap(
+	x: number,
+	y: number,
+	rectangleWidth: number,
+	rectangleHeight: number,
+	grid: string[],
+	width: number,
+	height: number,
+	targetColor: string,
+	selectedTargets?: ReadonlySet<number>
+): { cells: number[]; areas: Map<number, number> } {
+	const epsilon = 1e-9;
+	const firstColumn = Math.max(0, Math.floor(x + epsilon));
+	const lastColumn = Math.min(
+		width - 1,
+		Math.ceil(x + rectangleWidth - epsilon) - 1
+	);
+	const firstRow = Math.max(0, Math.floor(y + epsilon));
+	const lastRow = Math.min(
+		height - 1,
+		Math.ceil(y + rectangleHeight - epsilon) - 1
+	);
+	const cells: number[] = [];
+	const areas = new Map<number, number>();
+
+	for (let row = firstRow; row <= lastRow; row++) {
+		for (let column = firstColumn; column <= lastColumn; column++) {
+			const index = row * width + column;
+			if (
+				grid[index] !== targetColor ||
+				(selectedTargets !== undefined && !selectedTargets.has(index))
+			) {
+				continue;
+			}
+			const overlapWidth = Math.max(
+				0,
+				Math.min(x + rectangleWidth, column + 1) - Math.max(x, column)
+			);
+			const overlapHeight = Math.max(
+				0,
+				Math.min(y + rectangleHeight, row + 1) - Math.max(y, row)
+			);
+			const overlapArea = overlapWidth * overlapHeight;
+			if (overlapArea > epsilon) {
+				cells.push(index);
+				areas.set(index, overlapArea);
+			}
+		}
+	}
+
+	return { cells, areas };
+}
+
 export interface Measurements {
 	squareMm: number;
 	identiconWidthCm: number;
@@ -314,6 +704,7 @@ export function serializePaintParams(
 		search.set("canvasWidthCm", String(surface.canvasWidthCm));
 		search.set("canvasHeightCm", String(surface.canvasHeightCm));
 		search.set("canvasColor", surface.canvasColor);
+		search.set("tapeWidthCm", String(surface.tapeWidthCm));
 	}
 
 	return `?${search.toString()}`;
@@ -350,12 +741,12 @@ export function parsePaintSurfaceParams(
 	search: URLSearchParams
 ): PaintSurfaceParams {
 	const canvasColor = search.get("canvasColor") || "";
-
+	const squareCm = numberOr(
+		search.get("squareCm"),
+		DEFAULT_PAINT_SURFACE_PARAMS.squareCm
+	);
 	return {
-		squareCm: numberOr(
-			search.get("squareCm"),
-			DEFAULT_PAINT_SURFACE_PARAMS.squareCm
-		),
+		squareCm,
 		canvasWidthCm: numberOr(
 			search.get("canvasWidthCm"),
 			DEFAULT_PAINT_SURFACE_PARAMS.canvasWidthCm
@@ -366,7 +757,11 @@ export function parsePaintSurfaceParams(
 		),
 		canvasColor: /^#[0-9a-f]{6}$/i.test(canvasColor)
 			? canvasColor
-			: DEFAULT_PAINT_SURFACE_PARAMS.canvasColor
+			: DEFAULT_PAINT_SURFACE_PARAMS.canvasColor,
+		tapeWidthCm: numberOr(
+			search.get("tapeWidthCm"),
+			DEFAULT_PAINT_SURFACE_PARAMS.tapeWidthCm
+		)
 	};
 }
 

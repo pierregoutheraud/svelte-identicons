@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { IdenticonOptions } from "$lib/engine/Identicon.js";
+	import type { TapeSegment } from "./paint.helpers.js";
 
 	interface Props {
 		grid: string[];
@@ -17,6 +18,10 @@
 		sheetWidthPx?: number;
 		sheetHeightPx?: number;
 		sheetColor?: string;
+		tapeSegments?: TapeSegment[];
+		showTape?: boolean;
+		tapeSelectedCells?: number[];
+		tapeSelectionMode?: boolean;
 		/** False renders only the finished artwork, without painting guides. */
 		showGuides?: boolean;
 		onToggleCell?: (index: number) => void;
@@ -36,6 +41,10 @@
 		sheetWidthPx = 0,
 		sheetHeightPx = 0,
 		sheetColor = "#ffffff",
+		tapeSegments = [],
+		showTape = false,
+		tapeSelectedCells = [],
+		tapeSelectionMode = false,
 		showGuides = true,
 		onToggleCell = () => undefined
 	}: Props = $props();
@@ -48,12 +57,20 @@
 
 	const columns = $derived(Array.from({ length: width }, (_, i) => i + 1));
 	const rows = $derived(Array.from({ length: height }, (_, i) => i + 1));
+	const tapeOverlapCells = $derived(
+		new Set(tapeSegments.flatMap((segment) => segment.overlapCells))
+	);
+	const tapeSelectedSet = $derived(new Set(tapeSelectedCells));
 	// A final preview always shows the complete artwork, regardless of which
 	// paint is isolated in the editor.
 	const isolating = $derived(showGuides && activeColor !== null);
 	// The fold is only meaningful for axial symmetry. "central" mirrors on a flat
 	// index, which is a 180 degree rotation, not a line you can draw.
 	const foldColumn = $derived(symetry === "axial" ? Math.ceil(width / 2) : 0);
+
+	function tapeStyle(segment: TapeSegment): string {
+		return `left:${segment.x * cellPx}px;top:${segment.y * cellPx}px;width:${segment.width * cellPx}px;height:${segment.height * cellPx}px`;
+	}
 
 	// One delegated listener rather than 900. As an action rather than an inline
 	// handler, because the cells are real buttons and already handle the keyboard:
@@ -133,12 +150,17 @@
 				class:dim={isolating && !isActive}
 				class:active={isActive}
 				class:painted={painted[index]}
+				class:tape-unselected={showGuides &&
+					tapeSelectionMode &&
+					isActive &&
+					!tapeSelectedSet.has(index)}
 				class:current={showGuides && focusIndex === index}
 				class:outside={showGuides && focusRow !== null && focusRow !== row + 1}
 				class:edge-x={showGuides &&
 					(column + 1) % 5 === 0 &&
 					column + 1 !== width}
 				class:edge-y={showGuides && (row + 1) % 5 === 0 && row + 1 !== height}
+				class:tape-overlap={showTape && tapeOverlapCells.has(index)}
 				style={isolating && !isActive ? "" : `background:${color}`}
 				data-index={index}
 				disabled={!showGuides || isBase || (isolating && !isActive)}
@@ -151,6 +173,26 @@
 				{/if}
 			</button>
 		{/each}
+
+		{#if showTape && showGuides && showSheet && tapeSegments.length}
+			<div
+				class="tape-clip"
+				style="width:{sheetWidthPx}px;height:{sheetHeightPx}px"
+				aria-hidden="true"
+			>
+				<div class="tape-layer" style="left:{padX}px;top:{padY}px">
+					{#each tapeSegments as segment, index}
+						<span
+							class="tape-strip {segment.orientation}"
+							class:overlap={segment.overlapCells.length > 0}
+							style={tapeStyle(segment)}
+							data-tape-index={index}
+							data-orientation={segment.orientation}
+						></span>
+					{/each}
+				</div>
+			</div>
+		{/if}
 
 		{#if showGuides && foldColumn > 0}
 			<div class="fold"></div>
@@ -293,10 +335,6 @@
 		border-bottom-color: #0d0e11;
 	}
 
-	.cell.active {
-		box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85);
-	}
-
 	.cell.active:hover {
 		box-shadow: inset 0 0 0 2px gold;
 	}
@@ -314,6 +352,12 @@
 		opacity: 0.3;
 	}
 
+	.cell.active.tape-unselected,
+	.cell.active.painted.tape-unselected,
+	.cell.active.outside.tape-unselected {
+		opacity: 0.25;
+	}
+
 	/* The one square to paint next. Listed after .painted and .outside, and at
 	   matching specificity, so it always wins the ring and full opacity. */
 	.cell.active.current,
@@ -326,6 +370,16 @@
 		z-index: 1;
 	}
 
+	.cell.active.tape-overlap,
+	.cell.active.painted.tape-overlap,
+	.cell.active.outside.tape-overlap,
+	.cell.active.current.tape-overlap {
+		opacity: 1;
+		box-shadow:
+			inset 0 0 0 3px #ff625f,
+			0 0 7px 1px rgba(255, 98, 95, 0.72);
+	}
+
 	.cell svg {
 		position: absolute;
 		inset: 12%;
@@ -336,6 +390,39 @@
 		stroke-width: 1.8;
 		stroke-linecap: square;
 		mix-blend-mode: difference;
+	}
+
+	.tape-clip {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		overflow: hidden;
+		pointer-events: none;
+		z-index: 3;
+	}
+
+	.tape-layer {
+		position: absolute;
+	}
+
+	.tape-strip {
+		position: absolute;
+		box-sizing: border-box;
+		background: repeating-linear-gradient(
+			135deg,
+			rgba(135, 206, 235, 0.92) 0 5px,
+			rgba(82, 157, 194, 0.92) 5px 10px
+		);
+		border: 1px solid #000;
+	}
+
+	.tape-strip.overlap {
+		background: repeating-linear-gradient(
+			135deg,
+			rgba(255, 98, 95, 0.95) 0 5px,
+			rgba(158, 39, 46, 0.95) 5px 10px
+		);
 	}
 
 	/* Axial symmetry means you only have to read half the columns. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildPalette,
+	buildTapePattern,
 	colorCells,
 	createStubCanvas,
 	extractGrid,
@@ -154,7 +155,8 @@ describe("serializePaintParams / parsePaintParams", () => {
 			squareCm: 1.25,
 			canvasWidthCm: 42.5,
 			canvasHeightCm: 59.4,
-			canvasColor: "#203040"
+			canvasColor: "#203040",
+			tapeWidthCm: 1.9
 		};
 		const search = new URLSearchParams(serializePaintParams(BASE, surface));
 
@@ -164,7 +166,7 @@ describe("serializePaintParams / parsePaintParams", () => {
 	it("uses safe defaults for invalid physical settings", () => {
 		const parsed = parsePaintSurfaceParams(
 			new URLSearchParams(
-				"?squareCm=0&canvasWidthCm=nope&canvasHeightCm=-1&canvasColor=red"
+				"?squareCm=0&canvasWidthCm=nope&canvasHeightCm=-1&canvasColor=red&tapeWidthCm=0"
 			)
 		);
 
@@ -172,8 +174,20 @@ describe("serializePaintParams / parsePaintParams", () => {
 			squareCm: 2,
 			canvasWidthCm: 60,
 			canvasHeightCm: 60,
-			canvasColor: "#ffffff"
+			canvasColor: "#ffffff",
+			tapeWidthCm: 2.5
 		});
+	});
+
+	it("defaults tape to 2.5 cm and preserves widths smaller than a square", () => {
+		expect(
+			parsePaintSurfaceParams(new URLSearchParams("?squareCm=4")).tapeWidthCm
+		).toBe(2.5);
+		expect(
+			parsePaintSurfaceParams(
+				new URLSearchParams("?squareCm=4&tapeWidthCm=1.5")
+			).tapeWidthCm
+		).toBe(1.5);
 	});
 
 	it("round-trips every parameter available on the playground", () => {
@@ -362,6 +376,222 @@ describe("colorCells", () => {
 
 	it("formats a step the way the guide reads it out", () => {
 		expect(formatCell({ index: 64, row: 3, column: 5 })).toBe("row 3 column 5");
+	});
+});
+
+describe("buildTapePattern", () => {
+	function tape(
+		cells: string[],
+		width: number,
+		height: number,
+		overrides: Partial<{
+			squareCm: number;
+			canvasWidthCm: number;
+			canvasHeightCm: number;
+			tapeWidthCm: number;
+			targetCells: number[];
+		}> = {}
+	) {
+		const squareCm = overrides.squareCm ?? 1;
+		return buildTapePattern({
+			grid: cells,
+			width,
+			height,
+			targetColor: "x",
+			targetCells: overrides.targetCells,
+			squareCm,
+			canvasWidthCm: overrides.canvasWidthCm ?? width * squareCm + squareCm * 2,
+			canvasHeightCm:
+				overrides.canvasHeightCm ?? height * squareCm + squareCm * 2,
+			tapeWidthCm: overrides.tapeWidthCm ?? 0.5
+		});
+	}
+
+	function side(
+		pattern: ReturnType<typeof tape>,
+		name: "top" | "right" | "bottom" | "left"
+	) {
+		const segment = pattern.segments.find(
+			(candidate) => candidate.side === name
+		);
+		if (!segment) throw new Error(`Missing ${name} tape segment`);
+		return segment;
+	}
+
+	it("outlines one square with four strips and 1 cm past every cut end", () => {
+		const pattern = tape(["x"], 1, 1);
+		const top = side(pattern, "top");
+		const right = side(pattern, "right");
+		const bottom = side(pattern, "bottom");
+		const left = side(pattern, "left");
+
+		expect(pattern.segments).toHaveLength(4);
+		expect(top).toMatchObject({
+			orientation: "horizontal",
+			x: -1,
+			y: -0.5,
+			width: 3,
+			height: 0.5,
+			lengthCm: 3,
+			edgeCm: 1
+		});
+		expect(bottom.y).toBe(1);
+		expect(left).toMatchObject({
+			orientation: "vertical",
+			x: -0.5,
+			y: -1,
+			width: 0.5,
+			height: 3
+		});
+		expect(right.x).toBe(1);
+		expect(pattern.totalLengthCm).toBeCloseTo(12);
+	});
+
+	it("extends scissor-cut ends past corners so perpendicular strips overlap", () => {
+		const pattern = tape(["x"], 1, 1);
+		const top = side(pattern, "top");
+		const left = side(pattern, "left");
+		const overlapWidth =
+			Math.min(top.x + top.width, left.x + left.width) -
+			Math.max(top.x, left.x);
+		const overlapHeight =
+			Math.min(top.y + top.height, left.y + left.height) -
+			Math.max(top.y, left.y);
+
+		expect(overlapWidth).toBeCloseTo(0.5);
+		expect(overlapHeight).toBeCloseTo(0.5);
+	});
+
+	it("merges adjacent target squares into minimum straight perimeter runs", () => {
+		const pattern = tape(["x", "x"], 2, 1);
+
+		expect(pattern.segments).toHaveLength(4);
+		expect(
+			pattern.segments
+				.filter((segment) => segment.orientation === "horizontal")
+				.map((segment) => segment.lengthCm)
+		).toEqual([4, 4]);
+		expect(pattern.totalLengthCm).toBeCloseTo(14);
+	});
+
+	it("reuses two vertical strips across aligned separated squares", () => {
+		const pattern = tape(["x", "b", "x"], 1, 3);
+		const vertical = pattern.segments.filter(
+			(segment) => segment.orientation === "vertical"
+		);
+
+		expect(pattern.segments).toHaveLength(6);
+		expect(vertical).toHaveLength(2);
+		expect(vertical.map((segment) => segment.lengthCm)).toEqual([5, 5]);
+	});
+
+	it("does not merge across a gap when the longer strip would cover paint", () => {
+		const pattern = tape(
+			["b", "b", "x", "b", "b", "x", "b", "b", "b", "x"],
+			5,
+			2
+		);
+		const separatedTopEdges = pattern.segments.filter(
+			(segment) =>
+				segment.orientation === "horizontal" &&
+				segment.side === "top" &&
+				segment.edgeCm === 2
+		);
+
+		expect(separatedTopEdges).toHaveLength(2);
+		expect(separatedTopEdges.map((segment) => segment.lengthCm)).toEqual([
+			3, 3
+		]);
+	});
+
+	it("uses the physical canvas edge instead of redundant tape", () => {
+		expect(
+			tape(["x"], 1, 1, { canvasWidthCm: 1, canvasHeightCm: 1 }).segments
+		).toEqual([]);
+	});
+
+	it("keeps tape width independent from square size", () => {
+		const pattern = tape(["x"], 1, 1, {
+			squareCm: 2.5,
+			tapeWidthCm: 1,
+			canvasWidthCm: 7.5,
+			canvasHeightCm: 7.5
+		});
+
+		expect(
+			pattern.segments.find((segment) => segment.side === "top")
+		).toMatchObject({
+			heightCm: 1,
+			lengthCm: 4.5,
+			edgeCm: 2.5
+		});
+	});
+
+	it("uses the 5% extension when it exceeds the 1 cm minimum", () => {
+		const pattern = tape(["x"], 1, 1, {
+			squareCm: 40,
+			tapeWidthCm: 2.5,
+			canvasWidthCm: 120,
+			canvasHeightCm: 120
+		});
+
+		expect(side(pattern, "top").lengthCm).toBe(44);
+	});
+
+	it("generates tape for only the selected target squares", () => {
+		const pattern = tape(["x", "x"], 2, 1, { targetCells: [0, 0] });
+
+		expect(pattern.segments).toHaveLength(4);
+		expect(side(pattern, "right").x).toBe(1);
+		expect(pattern.totalLengthCm).toBe(12);
+	});
+
+	it("returns no tape for an empty or invalid square selection", () => {
+		expect(tape(["x", "b"], 2, 1, { targetCells: [] }).segments).toEqual([]);
+		expect(
+			tape(["x", "b"], 2, 1, {
+				targetCells: [-1, 1, 2, Number.NaN]
+			}).segments
+		).toEqual([]);
+	});
+
+	it("allows a reused strip to cover unchecked squares of the same colour", () => {
+		const pattern = tape(
+			["b", "b", "x", "b", "b", "x", "b", "b", "b", "x"],
+			5,
+			2,
+			{ targetCells: [5, 9] }
+		);
+		const selectedTopEdges = pattern.segments.filter(
+			(segment) =>
+				segment.orientation === "horizontal" &&
+				segment.side === "top" &&
+				segment.edgeCm === 2
+		);
+
+		expect(selectedTopEdges).toHaveLength(1);
+		expect(selectedTopEdges[0]?.lengthCm).toBe(7);
+	});
+
+	it("reports target cells reached by wide tape or inside-corner overlap", () => {
+		const pattern = tape(["x", "b", "x"], 1, 3, {
+			squareCm: 2,
+			tapeWidthCm: 2.5,
+			canvasWidthCm: 4,
+			canvasHeightCm: 8
+		});
+
+		expect(pattern.overlapCells).toEqual([0, 2]);
+	});
+
+	it("returns no instructions when the artwork does not fit", () => {
+		expect(
+			tape(["x", "x"], 2, 1, {
+				squareCm: 2,
+				canvasWidthCm: 3,
+				canvasHeightCm: 2
+			}).segments
+		).toEqual([]);
 	});
 });
 
