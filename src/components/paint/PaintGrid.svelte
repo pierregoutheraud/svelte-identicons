@@ -61,6 +61,29 @@
 		new Set(tapeSegments.flatMap((segment) => segment.overlapCells))
 	);
 	const tapeSelectedSet = $derived(new Set(tapeSelectedCells));
+	const tapeColors = [
+		{ light: "#9bdcf7", dark: "#3f9dcc" },
+		{ light: "#8fe0d6", dark: "#2f9f95" },
+		{ light: "#b7b1f4", dark: "#7468c9" },
+		{ light: "#91c8f4", dark: "#467fb8" },
+		{ light: "#b2d7ea", dark: "#648fa7" },
+		{ light: "#9fd1c5", dark: "#4f8f82" }
+	] as const;
+	const styledTapeSegments = $derived.by(() => {
+		let horizontal = 0;
+		let vertical = 0;
+
+		return tapeSegments.map((segment) => {
+			const order =
+				segment.orientation === "horizontal" ? ++horizontal : ++vertical;
+			const colorOffset = segment.orientation === "horizontal" ? 0 : 3;
+
+			return {
+				segment,
+				colors: tapeColors[(order - 1 + colorOffset) % tapeColors.length]
+			};
+		});
+	});
 	// A final preview always shows the complete artwork, regardless of which
 	// paint is isolated in the editor.
 	const isolating = $derived(showGuides && activeColor !== null);
@@ -68,8 +91,12 @@
 	// index, which is a 180 degree rotation, not a line you can draw.
 	const foldColumn = $derived(symetry === "axial" ? Math.ceil(width / 2) : 0);
 
-	function tapeStyle(segment: TapeSegment): string {
-		return `left:${segment.x * cellPx}px;top:${segment.y * cellPx}px;width:${segment.width * cellPx}px;height:${segment.height * cellPx}px`;
+	function tapeStyle(
+		segment: TapeSegment,
+		colors: (typeof tapeColors)[number],
+		stackOrder: number
+	): string {
+		return `left:${segment.x * cellPx}px;top:${segment.y * cellPx}px;width:${segment.width * cellPx}px;height:${segment.height * cellPx}px;--tape-light:${colors.light};--tape-dark:${colors.dark};z-index:${stackOrder + 1}`;
 	}
 
 	// One delegated listener rather than 900. As an action rather than an inline
@@ -181,13 +208,13 @@
 				aria-hidden="true"
 			>
 				<div class="tape-layer" style="left:{padX}px;top:{padY}px">
-					{#each tapeSegments as segment, index}
+					{#each styledTapeSegments as item, index}
 						<span
-							class="tape-strip {segment.orientation}"
-							class:overlap={segment.overlapCells.length > 0}
-							style={tapeStyle(segment)}
+							class="tape-strip {item.segment.orientation}"
+							class:overlap={item.segment.overlapCells.length > 0}
+							style={tapeStyle(item.segment, item.colors, index)}
 							data-tape-index={index}
-							data-orientation={segment.orientation}
+							data-orientation={item.segment.orientation}
 						></span>
 					{/each}
 				</div>
@@ -407,22 +434,24 @@
 	}
 
 	.tape-strip {
+		--tape-angle: 135deg;
 		position: absolute;
 		box-sizing: border-box;
 		background: repeating-linear-gradient(
-			135deg,
-			rgba(135, 206, 235, 0.92) 0 5px,
-			rgba(82, 157, 194, 0.92) 5px 10px
+			var(--tape-angle),
+			var(--tape-light) 0 5px,
+			var(--tape-dark) 5px 10px
 		);
 		border: 1px solid #000;
 	}
 
+	.tape-strip.vertical {
+		--tape-angle: 45deg;
+	}
+
 	.tape-strip.overlap {
-		background: repeating-linear-gradient(
-			135deg,
-			rgba(255, 98, 95, 0.95) 0 5px,
-			rgba(158, 39, 46, 0.95) 5px 10px
-		);
+		--tape-light: rgba(255, 98, 95, 0.95);
+		--tape-dark: rgba(158, 39, 46, 0.95);
 	}
 
 	/* Axial symmetry means you only have to read half the columns. */
