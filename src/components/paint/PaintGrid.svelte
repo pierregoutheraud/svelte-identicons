@@ -20,8 +20,8 @@
 		sheetColor?: string;
 		tapeSegments?: TapeSegment[];
 		showTape?: boolean;
-		tapeSelectedCells?: number[];
-		tapeSelectionMode?: boolean;
+		/** Generated tape strip to emphasize while following the placement guide. */
+		tapeGuideIndex?: number | null;
 		/** False renders only the finished artwork, without painting guides. */
 		showGuides?: boolean;
 		onToggleCell?: (index: number) => void;
@@ -43,8 +43,7 @@
 		sheetColor = "#ffffff",
 		tapeSegments = [],
 		showTape = false,
-		tapeSelectedCells = [],
-		tapeSelectionMode = false,
+		tapeGuideIndex = null,
 		showGuides = true,
 		onToggleCell = () => undefined
 	}: Props = $props();
@@ -60,7 +59,14 @@
 	const tapeOverlapCells = $derived(
 		new Set(tapeSegments.flatMap((segment) => segment.overlapCells))
 	);
-	const tapeSelectedSet = $derived(new Set(tapeSelectedCells));
+	const guidingTape = $derived(
+		tapeGuideIndex !== null &&
+			tapeGuideIndex >= 0 &&
+			tapeGuideIndex < tapeSegments.length
+	);
+	const activeTapeGuideIndex = $derived(
+		guidingTape && tapeGuideIndex !== null ? tapeGuideIndex : -1
+	);
 	const tapeColors = [
 		{ light: "#9bdcf7", dark: "#3f9dcc" },
 		{ light: "#8fe0d6", dark: "#2f9f95" },
@@ -94,9 +100,11 @@
 	function tapeStyle(
 		segment: TapeSegment,
 		colors: (typeof tapeColors)[number],
-		stackOrder: number
+		stackOrder: number,
+		isCurrent: boolean
 	): string {
-		return `left:${segment.x * cellPx}px;top:${segment.y * cellPx}px;width:${segment.width * cellPx}px;height:${segment.height * cellPx}px;--tape-light:${colors.light};--tape-dark:${colors.dark};z-index:${stackOrder + 1}`;
+		const zIndex = isCurrent ? tapeSegments.length + 1 : stackOrder + 1;
+		return `left:${segment.x * cellPx}px;top:${segment.y * cellPx}px;width:${segment.width * cellPx}px;height:${segment.height * cellPx}px;--tape-light:${colors.light};--tape-dark:${colors.dark};z-index:${zIndex}`;
 	}
 
 	// One delegated listener rather than 900. As an action rather than an inline
@@ -177,10 +185,6 @@
 				class:dim={isolating && !isActive}
 				class:active={isActive}
 				class:painted={painted[index]}
-				class:tape-unselected={showGuides &&
-					tapeSelectionMode &&
-					isActive &&
-					!tapeSelectedSet.has(index)}
 				class:current={showGuides && focusIndex === index}
 				class:outside={showGuides && focusRow !== null && focusRow !== row + 1}
 				class:edge-x={showGuides &&
@@ -190,7 +194,9 @@
 				class:tape-overlap={showTape && tapeOverlapCells.has(index)}
 				style={isolating && !isActive ? "" : `background:${color}`}
 				data-index={index}
-				disabled={!showGuides || isBase || (isolating && !isActive)}
+				disabled={!showGuides ||
+					(isBase && !isActive) ||
+					(isolating && !isActive)}
 				title={showGuides ? `row ${row + 1}, column ${column + 1}` : undefined}
 			>
 				{#if painted[index] && isActive}
@@ -209,10 +215,14 @@
 			>
 				<div class="tape-layer" style="left:{padX}px;top:{padY}px">
 					{#each styledTapeSegments as item, index}
+						{@const isCurrent = index === activeTapeGuideIndex}
 						<span
 							class="tape-strip {item.segment.orientation}"
 							class:overlap={item.segment.overlapCells.length > 0}
-							style={tapeStyle(item.segment, item.colors, index)}
+							class:tape-current={isCurrent}
+							class:tape-past={guidingTape && index < activeTapeGuideIndex}
+							class:tape-future={guidingTape && index > activeTapeGuideIndex}
+							style={tapeStyle(item.segment, item.colors, index, isCurrent)}
 							data-tape-index={index}
 							data-orientation={item.segment.orientation}
 						></span>
@@ -347,19 +357,10 @@
 		border-bottom: 1px solid rgba(0, 0, 0, 0.75);
 	}
 
-	/* Everything that is not the color being painted right now. */
+	/* Hide every other paint against the physical canvas while keeping the grid
+	   guides visible. */
 	.cell.dim {
-		background: #23262c;
-		border-right-color: #191b1f;
-		border-bottom-color: #191b1f;
-	}
-
-	.cell.dim.edge-x {
-		border-right-color: #0d0e11;
-	}
-
-	.cell.dim.edge-y {
-		border-bottom-color: #0d0e11;
+		background: var(--sheet-color);
 	}
 
 	.cell.active:hover {
@@ -377,12 +378,6 @@
 
 	.cell.active.outside {
 		opacity: 0.3;
-	}
-
-	.cell.active.tape-unselected,
-	.cell.active.painted.tape-unselected,
-	.cell.active.outside.tape-unselected {
-		opacity: 0.25;
 	}
 
 	/* The one square to paint next. Listed after .painted and .outside, and at
@@ -452,6 +447,21 @@
 	.tape-strip.overlap {
 		--tape-light: rgba(255, 98, 95, 0.95);
 		--tape-dark: rgba(158, 39, 46, 0.95);
+	}
+
+	.tape-strip.tape-past {
+		opacity: 0.18;
+	}
+
+	.tape-strip.tape-future {
+		opacity: 0;
+	}
+
+	.tape-strip.tape-current {
+		opacity: 1;
+		box-shadow:
+			0 0 0 2px gold,
+			0 0 10px rgba(255, 215, 0, 0.7);
 	}
 
 	/* Axial symmetry means you only have to read half the columns. */

@@ -57,6 +57,8 @@
 	let canvasColor = $state(initialSurface.canvasColor);
 	let tapeWidthCm = $state(initialSurface.tapeWidthCm);
 	let tapeBatches = $state<Record<string, TapeBatchState>>({});
+	// -1 = not started, segment count = placement guide completed.
+	let tapeGuideIndex = $state(-1);
 	let showGuides = $state(true);
 	let showHowTo = $state(false);
 	let verifyStatus = $state("");
@@ -104,6 +106,7 @@
 		loadedKey = nextKey;
 		painted = loadProgress(nextKey, size);
 		tapeBatches = {};
+		tapeGuideIndex = -1;
 	});
 
 	$effect(() => {
@@ -141,10 +144,10 @@
 	const activeEntry = $derived(
 		palette.find((entry) => entry.color === activeColor)
 	);
+	// Every color can need a tape and square pass: the generated background is
+	// not necessarily the physical base coat.
 	const steps = $derived(
-		activeColor && !activeEntry?.isBase
-			? colorCells(grid, params.width, activeColor)
-			: []
+		activeColor ? colorCells(grid, params.width, activeColor) : []
 	);
 	// The set of grid indexes is a stable identity for a colour even when its hex
 	// changes. Layout changes clear the map in the effect above.
@@ -177,7 +180,6 @@
 	);
 	const tapePattern = $derived(
 		activeEntry &&
-			!activeEntry.isBase &&
 			measurements.fits &&
 			hasGeneratedTape &&
 			generatedTapeCells.length
@@ -198,11 +200,25 @@
 					overlapCells: []
 				}
 	);
+	const currentTape = $derived(
+		tapeGuideIndex >= 0 && tapeGuideIndex < tapePattern.segments.length
+			? tapePattern.segments[tapeGuideIndex]
+			: null
+	);
+	const tapeGuideComplete = $derived(
+		tapePattern.segments.length > 0 &&
+			tapeGuideIndex >= tapePattern.segments.length
+	);
+	const tapeGuideProgress = $derived(
+		tapePattern.segments.length
+			? Math.min(
+					1,
+					Math.max(0, tapeGuideIndex + 1) / tapePattern.segments.length
+				)
+			: 0
+	);
 	const showTapeOverlay = $derived(
-		showTape &&
-			showGuides &&
-			Boolean(activeEntry && !activeEntry.isBase) &&
-			measurements.fits
+		showTape && showGuides && Boolean(activeEntry) && measurements.fits
 	);
 
 	// One scale for both: the zoom slider sets pixels per square, and the canvas
@@ -328,6 +344,7 @@
 		const value = (event.currentTarget as HTMLInputElement).valueAsNumber;
 		if (!Number.isFinite(value) || value <= 0) return;
 		squareCm = value;
+		tapeGuideIndex = -1;
 	}
 
 	function handleTapeWidth(event: Event) {
@@ -337,6 +354,7 @@
 		// write a fallback into the DOM mid-edit or typing `1` can become `0.11`.
 		if (!Number.isFinite(value) || value <= 0) return;
 		tapeWidthCm = value;
+		tapeGuideIndex = -1;
 	}
 
 	function restoreTapeWidth(event: FocusEvent) {
@@ -361,6 +379,7 @@
 			generated: null,
 			showOverlay: false
 		});
+		tapeGuideIndex = -1;
 	}
 
 	function selectAllTapeSquares() {
@@ -369,6 +388,7 @@
 			generated: null,
 			showOverlay: false
 		});
+		tapeGuideIndex = -1;
 	}
 
 	function clearTapeSquares() {
@@ -377,6 +397,7 @@
 			generated: null,
 			showOverlay: false
 		});
+		tapeGuideIndex = -1;
 	}
 
 	function generateTapePattern() {
@@ -386,20 +407,61 @@
 			generated: [...selectedTapeCells],
 			showOverlay: true
 		});
+		tapeGuideIndex = -1;
 	}
 
 	function toggleTapeOverlay() {
 		if (!hasGeneratedTape) return;
+		const showOverlay = !activeTapeBatch.showOverlay;
 		setActiveTapeBatch({
 			...activeTapeBatch,
-			showOverlay: !activeTapeBatch.showOverlay
+			showOverlay
 		});
+		if (!showOverlay) tapeGuideIndex = -1;
+	}
+
+	function showTapeGuideOverlay() {
+		showGuides = true;
+		if (activeTapeBatch.showOverlay) return;
+		setActiveTapeBatch({ ...activeTapeBatch, showOverlay: true });
+	}
+
+	function goNextTape() {
+		const count = tapePattern.segments.length;
+		if (!count) return;
+
+		showTapeGuideOverlay();
+		if (tapeGuideIndex < 0 || tapeGuideIndex >= count) {
+			tapeGuideIndex = 0;
+		} else {
+			tapeGuideIndex += 1;
+		}
+	}
+
+	function goPreviousTape() {
+		const count = tapePattern.segments.length;
+		if (!count || tapeGuideIndex <= 0) return;
+
+		showTapeGuideOverlay();
+		tapeGuideIndex = Math.min(tapeGuideIndex, count) - 1;
+	}
+
+	function tapePosition(segment: (typeof tapePattern.segments)[number]) {
+		const xStart = round(segment.xCm, 2);
+		const xEnd = round(segment.xCm + segment.widthCm, 2);
+		const yStart = round(segment.yCm, 2);
+		const yEnd = round(segment.yCm + segment.heightCm, 2);
+
+		return segment.orientation === "horizontal"
+			? `Runs from ${xStart} to ${xEnd} cm across; its long edges sit ${yStart} and ${yEnd} cm from the canvas top.`
+			: `Runs from ${yStart} to ${yEnd} cm down; its long edges sit ${xStart} and ${xEnd} cm from the canvas left.`;
 	}
 
 	function handleSelectColor(color: string | null) {
 		selectedColor = color;
 		// Resume where the color was left off: the first square not yet painted.
 		stepIndex = -1;
+		tapeGuideIndex = -1;
 	}
 
 	/** Moving on marks the square you are leaving as painted. */
@@ -548,8 +610,7 @@
 					sheetColor={canvasColor}
 					tapeSegments={tapePattern.segments}
 					showTape={showTapeOverlay}
-					tapeSelectedCells={selectedTapeCells}
-					tapeSelectionMode={Boolean(activeEntry && !activeEntry.isBase)}
+					tapeGuideIndex={currentTape ? tapeGuideIndex : null}
 					{showGuides}
 					symetry={params.symetry}
 					onToggleCell={handleToggleCell}
@@ -580,9 +641,9 @@
 					/>
 					<div class="preview-meta">
 						<p>{grid.length} cells</p>
-						<p><b>{toPaint}</b> to paint</p>
+						<p><b>{toPaint}</b> foreground cells</p>
 						<p class="muted">
-							{grid.length - toPaint} covered by the base coat
+							{grid.length - toPaint} generated background cells
 						</p>
 					</div>
 				</div>
@@ -649,7 +710,7 @@
 							<span class="muted">({round(entry.pct, 1)}%)</span>
 						</span>
 						{#if entry.isBase}
-							<span class="badge">base coat</span>
+							<span class="badge">background</span>
 						{/if}
 					</div>
 				{/each}
@@ -689,7 +750,7 @@
 					{/each}
 				</div>
 
-				{#if activeEntry && !activeEntry.isBase}
+				{#if activeEntry}
 					<div class="progress">
 						<div class="bar">
 							<span
@@ -702,11 +763,6 @@
 							cells
 						</p>
 					</div>
-				{:else if activeEntry?.isBase}
-					<p class="hint">
-						This is the base coat. Cover the whole canvas with it once and every
-						one of these {activeEntry.count} cells is already done.
-					</p>
 				{:else}
 					<div class="progress">
 						<div class="bar">
@@ -714,6 +770,13 @@
 						</div>
 						<p>Overall: {totalPainted} / {toPaint} cells</p>
 					</div>
+				{/if}
+				{#if activeEntry?.isBase}
+					<p class="hint">
+						This is the generated background. If you used it as the physical
+						base coat, you can skip its guides. Otherwise, use its tape and
+						Square guides like any other color.
+					</p>
 				{/if}
 
 				<div class="row">
@@ -725,7 +788,7 @@
 				</div>
 			</section>
 
-			{#if activeEntry && !activeEntry.isBase}
+			{#if activeEntry}
 				<section class="panel tape-panel">
 					<h2>Tape pattern &middot; {activeEntry.label}</h2>
 					<div class="row">
@@ -835,6 +898,54 @@
 								Do not rely on a scissor-cut edge here; split these inside
 								corners into a separate paint pass.
 							</p>
+						{/if}
+
+						{#if tapePattern.segments.length}
+							<div class="tape-guide" aria-live="polite">
+								<div class="tape-guide-heading">
+									<h3>Placement guide</h3>
+									<span>
+										{Math.min(
+											Math.max(0, tapeGuideIndex + 1),
+											tapePattern.segments.length
+										)} / {tapePattern.segments.length}
+									</span>
+								</div>
+								<div class="tape-guide-progress" aria-hidden="true">
+									<span style="width:{tapeGuideProgress * 100}%"></span>
+								</div>
+
+								{#if currentTape}
+									<p class="tape-guide-current">
+										<b>{currentTape.orientation}</b>
+										<span>{round(currentTape.lengthCm, 2)} cm strip</span>
+									</p>
+									<p class="hint">{tapePosition(currentTape)}</p>
+								{:else if tapeGuideComplete}
+									<p class="tape-guide-done">All strips placed.</p>
+								{:else}
+									<p class="hint">
+										Follow the generated pattern one strip at a time.
+									</p>
+								{/if}
+
+								<div class="row tape-guide-actions">
+									<button
+										class="ghost"
+										disabled={tapeGuideIndex <= 0}
+										onclick={goPreviousTape}>Previous</button
+									>
+									<button onclick={goNextTape}>
+										{tapeGuideComplete
+											? "Restart guide"
+											: tapeGuideIndex < 0
+												? "Start guide"
+												: tapeGuideIndex === tapePattern.segments.length - 1
+													? "Finish"
+													: "Placed, next"}
+									</button>
+								</div>
+							</div>
 						{/if}
 					{/if}
 				</section>
@@ -1009,6 +1120,7 @@
 					<input
 						type="number"
 						bind:value={canvasWidthCm}
+						oninput={() => (tapeGuideIndex = -1)}
 						aria-label="Canvas width in centimetres"
 						min="1"
 					/>
@@ -1016,6 +1128,7 @@
 					<input
 						type="number"
 						bind:value={canvasHeightCm}
+						oninput={() => (tapeGuideIndex = -1)}
 						aria-label="Canvas height in centimetres"
 						min="1"
 					/>
@@ -1051,9 +1164,10 @@
 							color matching.
 						</li>
 						<li>
-							Base coat the whole canvas in
-							<b style="color:{baseEntry?.color}">{baseEntry?.color}</b>. Those
-							{baseEntry?.count} cells are then finished.
+							Base coat the whole canvas with the paint that gives you the best
+							coverage. If that is not the generated background
+							<b style="color:{baseEntry?.color}">{baseEntry?.color}</b>, use
+							the background color's tape pattern like any other color.
 						</li>
 						<li>
 							Pick a non-base color and open its tape pattern. Use each strip's
@@ -1393,6 +1507,69 @@
 		color: #2a1011;
 		background: #ff7773;
 		padding: 8px;
+	}
+
+	.tape-guide {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 10px;
+		background: #15181d;
+		border-left: 3px solid #87ceeb;
+	}
+
+	.tape-guide-heading {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+
+	.tape-guide-heading h3 {
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #b8bfc9;
+	}
+
+	.tape-guide-heading span {
+		font-size: 12px;
+		font-weight: 700;
+		color: #87ceeb;
+	}
+
+	.tape-guide-progress {
+		height: 3px;
+		background: #2e333b;
+	}
+
+	.tape-guide-progress span {
+		display: block;
+		height: 100%;
+		background: #87ceeb;
+	}
+
+	.tape-guide-current {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		color: #b8bfc9;
+		font-size: 14px;
+	}
+
+	.tape-guide-current b {
+		color: gold;
+		text-transform: capitalize;
+	}
+
+	.tape-guide-done {
+		color: #7dd97d;
+		font-size: 14px;
+		font-weight: 700;
+	}
+
+	.tape-guide-actions button:last-child {
+		flex: 1;
 	}
 
 	.tape-selection-heading {
