@@ -46,12 +46,25 @@ export function randomHex(): string {
 		.padStart(6, "0")}`;
 }
 
+const PAINT_SLOT_PREFIX = "slot:";
+const TEXT_CELL_ID = "text";
+
+function paintSlotId(index: number): string {
+	return `${PAINT_SLOT_PREFIX}${index}`;
+}
+
+function paintSlotIndex(id: string): number | null {
+	if (!id.startsWith(PAINT_SLOT_PREFIX)) return null;
+	const index = Number(id.slice(PAINT_SLOT_PREFIX.length));
+	return Number.isInteger(index) && index >= 0 ? index : null;
+}
+
 export const DEFAULT_PAINT_PARAMS: PaintParams = {
 	// A constant, not a random word: parsePaintParams runs during SSR as well as
 	// on the client, and a random default would not survive hydration.
 	seed: "paint",
-	width: 30,
-	height: 30,
+	width: 16,
+	height: 16,
 	symetry: "axial",
 	symetryAxis: "gap",
 	tileSize: 5,
@@ -73,15 +86,23 @@ export interface PaintSurfaceParams {
 }
 
 export const DEFAULT_PAINT_SURFACE_PARAMS: PaintSurfaceParams = {
-	squareCm: 2,
-	canvasWidthCm: 60,
-	canvasHeightCm: 60,
+	squareCm: 2.5,
+	canvasWidthCm: 40,
+	canvasHeightCm: 40,
 	canvasColor: "#ffffff",
 	tapeWidthCm: 2.5
 };
 
 export const TAPE_LENGTH_ALLOWANCE_RATIO = 0.1;
 export const MIN_TAPE_END_EXTENSION_CM = 1;
+export const PRODUCTION_ORIGIN = "https://svelte-identicons.vercel.app";
+
+export function productionShareUrl(currentUrl: URL): string {
+	return new URL(
+		`${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+		PRODUCTION_ORIGIN
+	).href;
+}
 
 export function tapeEndExtensionCm(squareCm: number): number {
 	return Math.max(
@@ -98,7 +119,12 @@ export function tapeEndExtensionCm(squareCm: number): number {
 export function extractGrid(
 	params: PaintParams,
 	canvas?: CanvasLike
-): { grid: string[]; backgroundColor: string; colors: string[] } {
+): {
+	grid: string[];
+	cellIds: string[];
+	backgroundColor: string;
+	colors: string[];
+} {
 	const target =
 		canvas ??
 		(typeof document !== "undefined"
@@ -123,48 +149,80 @@ export function extractGrid(
 	});
 
 	const backgroundColor = identicon.backgroundColor;
+	const colors = identicon.options.colors;
 
 	// A cell can be undefined or "" (an empty textColor makes render() skip it),
 	// and the engine draws the background through in both cases.
 	const grid = identicon.imageData.map((color) => color || backgroundColor);
+	// Render the same deterministic pattern with semantic identifiers. This
+	// preserves palette-slot identity when two slots intentionally share a hex.
+	const identityIdenticon = new Identicon(
+		createStubCanvas() as unknown as HTMLCanvasElement,
+		{
+			seed: params.seed,
+			width: params.width,
+			height: params.height,
+			symetry: params.symetry,
+			symetryAxis: params.symetryAxis,
+			tileSize: params.tileSize,
+			numberOfColors: colors.length,
+			colors: colors.map((_, index) => paintSlotId(index)),
+			text: params.text || undefined,
+			textColor: TEXT_CELL_ID,
+			textPosition: params.textPosition,
+			textFont: params.textFont,
+			pixelSize: 1,
+			onColors: undefined
+		}
+	);
+	const cellIds = identityIdenticon.imageData.map((id, index) =>
+		identicon.imageData[index] ? id || paintSlotId(0) : paintSlotId(0)
+	);
 
 	// The resolved palette in *engine order*, which is what the weights are
 	// assigned to. Handing this back verbatim as `colors` reproduces the exact
 	// same layout; re-ordering it would not.
-	return { grid, backgroundColor, colors: identicon.options.colors };
+	return { grid, cellIds, backgroundColor, colors };
 }
 
 export interface PaletteEntry {
+	id: string;
 	color: string;
 	count: number;
 	pct: number;
 	isBase: boolean;
 	label: string;
+	sourceIndex: number | null;
 }
 
 const LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 /**
- * Built from the values actually present in the grid, not from options.colors:
- * a text overlay can write colors that were never in the palette.
+ * Built from semantic cell IDs so identical hex values in separate paint slots
+ * stay independently selectable. A text overlay remains its own entry too.
  */
 export function buildPalette(
 	grid: string[],
-	backgroundColor: string
+	cellIds: string[]
 ): PaletteEntry[] {
-	const counts = new Map<string, number>();
-	for (const color of grid) {
-		counts.set(color, (counts.get(color) || 0) + 1);
+	const counts = new Map<string, { color: string; count: number }>();
+	for (let index = 0; index < grid.length; index++) {
+		const id = cellIds[index] || `color:${grid[index].toLowerCase()}`;
+		const current = counts.get(id);
+		counts.set(id, {
+			color: current?.color || grid[index],
+			count: (current?.count || 0) + 1
+		});
 	}
 
-	const entries = [...counts.entries()].map(([color, count]) => ({
+	const entries = [...counts.entries()].map(([id, { color, count }]) => ({
+		id,
 		color,
 		count,
 		pct: grid.length ? (count / grid.length) * 100 : 0,
-		// The base coat is whatever the engine fills the canvas with. With a text
-		// overlay that is not necessarily the first color of the palette.
-		isBase: color === backgroundColor,
-		label: ""
+		isBase: paintSlotIndex(id) === 0,
+		label: "",
+		sourceIndex: paintSlotIndex(id)
 	}));
 
 	entries.sort((a, b) => {
@@ -189,14 +247,14 @@ export interface CellStep {
  * work through, one at a time.
  */
 export function colorCells(
-	grid: string[],
+	cellIds: string[],
 	width: number,
-	color: string
+	cellId: string
 ): CellStep[] {
 	const steps: CellStep[] = [];
 
-	for (let i = 0; i < grid.length; i++) {
-		if (grid[i] === color) {
+	for (let i = 0; i < cellIds.length; i++) {
+		if (cellIds[i] === cellId) {
 			steps.push({
 				index: i,
 				row: Math.floor(i / width) + 1,
@@ -811,19 +869,4 @@ export function layoutKey(params: PaintParams): string {
 
 export function effectiveColorCount(params: PaintParams): number {
 	return params.colors.length || params.numberOfColors || 1;
-}
-
-export function findDuplicateColors(colors: string[]): string[] {
-	const seen = new Set<string>();
-	const duplicates = new Set<string>();
-
-	for (const color of colors) {
-		const key = color.toLowerCase();
-		if (seen.has(key)) {
-			duplicates.add(key);
-		}
-		seen.add(key);
-	}
-
-	return [...duplicates];
 }

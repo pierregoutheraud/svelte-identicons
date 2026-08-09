@@ -5,12 +5,12 @@ import {
 	colorCells,
 	createStubCanvas,
 	extractGrid,
-	findDuplicateColors,
 	formatCell,
 	layoutKey,
 	measure,
 	parsePaintParams,
 	parsePaintSurfaceParams,
+	productionShareUrl,
 	serializePaintParams,
 	type PaintParams,
 	type PaintSurfaceParams
@@ -150,6 +150,16 @@ describe("extractGrid", () => {
 });
 
 describe("serializePaintParams / parsePaintParams", () => {
+	it("builds share links with the production origin", () => {
+		expect(
+			productionShareUrl(
+				new URL("http://127.0.0.1:5192/paint?seed=abc&width=16#preview")
+			)
+		).toBe(
+			"https://svelte-identicons.vercel.app/paint?seed=abc&width=16#preview"
+		);
+	});
+
 	it("round-trips physical square and canvas settings", () => {
 		const surface: PaintSurfaceParams = {
 			squareCm: 1.25,
@@ -171,9 +181,9 @@ describe("serializePaintParams / parsePaintParams", () => {
 		);
 
 		expect(parsed).toEqual({
-			squareCm: 2,
-			canvasWidthCm: 60,
-			canvasHeightCm: 60,
+			squareCm: 2.5,
+			canvasWidthCm: 40,
+			canvasHeightCm: 40,
 			canvasColor: "#ffffff",
 			tapeWidthCm: 2.5
 		});
@@ -247,10 +257,10 @@ describe("serializePaintParams / parsePaintParams", () => {
 		);
 	});
 
-	it("defaults to a 30x30 grid", () => {
+	it("defaults to a 16x16 grid", () => {
 		const parsed = parsePaintParams(new URLSearchParams("?seed=abc"));
-		expect(parsed.width).toBe(30);
-		expect(parsed.height).toBe(30);
+		expect(parsed.width).toBe(16);
+		expect(parsed.height).toBe(16);
 	});
 });
 
@@ -288,43 +298,52 @@ describe("layoutKey", () => {
 
 describe("buildPalette", () => {
 	it("counts every cell and puts the base coat first", () => {
-		const { grid: cells, backgroundColor } = extractGrid(
-			BASE,
-			createStubCanvas()
-		);
-		const palette = buildPalette(cells, backgroundColor);
+		const extraction = extractGrid(BASE, createStubCanvas());
+		const palette = buildPalette(extraction.grid, extraction.cellIds);
 
-		expect(palette.reduce((acc, p) => acc + p.count, 0)).toBe(cells.length);
+		expect(palette.reduce((acc, p) => acc + p.count, 0)).toBe(
+			extraction.grid.length
+		);
 		expect(palette[0].isBase).toBe(true);
-		expect(palette[0].color).toBe(backgroundColor);
+		expect(palette[0].color).toBe(extraction.backgroundColor);
 		expect(palette.filter((p) => p.isBase)).toHaveLength(1);
 		expect(palette.map((p) => p.label).slice(0, 3)).toEqual(["A", "B", "C"]);
 	});
 
 	it("leaves most of the grid unpainted, since the base coat covers it", () => {
-		const { grid: cells, backgroundColor } = extractGrid(
-			BASE,
-			createStubCanvas()
-		);
-		const palette = buildPalette(cells, backgroundColor);
+		const extraction = extractGrid(BASE, createStubCanvas());
+		const palette = buildPalette(extraction.grid, extraction.cellIds);
 		const toPaint = palette
 			.filter((p) => !p.isBase)
 			.reduce((acc, p) => acc + p.count, 0);
 
 		// Geometric weights give colors[0] 0.5/0.875 of a 3-color grid.
-		expect(toPaint).toBeLessThan(cells.length / 2);
+		expect(toPaint).toBeLessThan(extraction.grid.length / 2);
 	});
 
 	it("orders the non-base colors by descending count", () => {
-		const { grid: cells, backgroundColor } = extractGrid(
-			BASE,
-			createStubCanvas()
-		);
-		const counts = buildPalette(cells, backgroundColor)
+		const extraction = extractGrid(BASE, createStubCanvas());
+		const counts = buildPalette(extraction.grid, extraction.cellIds)
 			.filter((p) => !p.isBase)
 			.map((p) => p.count);
 
 		expect([...counts].sort((a, b) => b - a)).toEqual(counts);
+	});
+
+	it("keeps duplicate hex values as separate paint slots", () => {
+		const duplicate = "#aabbcc";
+		const extraction = extractGrid(
+			{ ...BASE, colors: [duplicate, duplicate, "#112233"] },
+			createStubCanvas()
+		);
+		const matching = buildPalette(extraction.grid, extraction.cellIds).filter(
+			(entry) => entry.color === duplicate
+		);
+
+		expect(matching).toHaveLength(2);
+		expect(matching.map((entry) => entry.sourceIndex).sort()).toEqual([0, 1]);
+		expect(matching.every((entry) => entry.count > 0)).toBe(true);
+		expect(matching[0].id).not.toBe(matching[1].id);
 	});
 });
 
@@ -351,15 +370,12 @@ describe("colorCells", () => {
 	});
 
 	it("covers every cell exactly once across the whole palette", () => {
-		const { grid: cells, backgroundColor } = extractGrid(
-			BASE,
-			createStubCanvas()
-		);
-		const palette = buildPalette(cells, backgroundColor);
-		const rebuilt: string[] = new Array(cells.length).fill("");
+		const extraction = extractGrid(BASE, createStubCanvas());
+		const palette = buildPalette(extraction.grid, extraction.cellIds);
+		const rebuilt: string[] = new Array(extraction.grid.length).fill("");
 
 		for (const entry of palette) {
-			const steps = colorCells(cells, BASE.width, entry.color);
+			const steps = colorCells(extraction.cellIds, BASE.width, entry.id);
 			expect(steps).toHaveLength(entry.count);
 
 			for (const step of steps) {
@@ -371,7 +387,7 @@ describe("colorCells", () => {
 			}
 		}
 
-		expect(rebuilt).toEqual(cells);
+		expect(rebuilt).toEqual(extraction.grid);
 	});
 
 	it("formats a step the way the guide reads it out", () => {
@@ -688,14 +704,5 @@ describe("measure", () => {
 		]) {
 			expect(Number.isNaN(value)).toBe(false);
 		}
-	});
-});
-
-describe("findDuplicateColors", () => {
-	it("catches two tubes set to the same hex, case-insensitively", () => {
-		expect(findDuplicateColors(["#AABBCC", "#111111", "#aabbcc"])).toEqual([
-			"#aabbcc"
-		]);
-		expect(findDuplicateColors(["#aabbcc", "#111111"])).toEqual([]);
 	});
 });

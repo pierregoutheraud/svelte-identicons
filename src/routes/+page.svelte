@@ -8,6 +8,7 @@
 	import IdenticonItem, {
 		type Params
 	} from "../components/IdenticonItem.svelte";
+	import { DEFAULT_PAINT_PARAMS } from "../components/paint/paint.helpers.js";
 
 	let params = $state<Params>(parseParams($page.url.searchParams));
 
@@ -43,8 +44,8 @@
 			seed: params.get("seed") || generateSeed(),
 			text: params.get("text") || "",
 			numberOfColors: parseInt(params.get("numberOfColors") || "2"),
-			height: parseInt(params.get("height") || "10"),
-			width: parseInt(params.get("width") || "10"),
+			height: positiveIntOr(params.get("height"), DEFAULT_PAINT_PARAMS.height),
+			width: positiveIntOr(params.get("width"), DEFAULT_PAINT_PARAMS.width),
 			pixelSize: parseInt(params.get("pixelSize") || "10"),
 			colors: params.get("colors")?.length
 				? params.get("colors")!.split(",")
@@ -61,6 +62,11 @@
 			textFont:
 				(params.get("textFont") as IdenticonOptions["textFont"]) || "3x4"
 		};
+	}
+
+	function positiveIntOr(value: string | null, fallback: number): number {
+		const parsed = parseInt(value || "", 10);
+		return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 	}
 
 	function createUrl(params: Params): string {
