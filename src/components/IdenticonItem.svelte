@@ -41,6 +41,7 @@
 	const paintHref = $derived(
 		`/paint${serializePaintParams({
 			seed: params.seed,
+			combinationSeed: params.seed,
 			width: params.width,
 			height: params.height,
 			symetry: params.symetry,
@@ -48,6 +49,7 @@
 			tileSize: params.tileSize,
 			numberOfColors: params.numberOfColors,
 			colors: params.colors,
+			selectedColorIndices: [],
 			text: params.text,
 			textColor: params.textColor,
 			textPosition: params.textPosition,

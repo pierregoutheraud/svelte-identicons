@@ -4,6 +4,7 @@ import {
 	buildTapePattern,
 	colorCells,
 	createStubCanvas,
+	effectiveColorCount,
 	extractGrid,
 	formatCell,
 	layoutKey,
@@ -11,6 +12,7 @@ import {
 	parsePaintParams,
 	parsePaintSurfaceParams,
 	productionShareUrl,
+	selectPaintColors,
 	serializePaintParams,
 	type PaintParams,
 	type PaintSurfaceParams
@@ -18,6 +20,7 @@ import {
 
 const BASE: PaintParams = {
 	seed: "eventual-mango",
+	combinationSeed: "eventual-mango",
 	width: 30,
 	height: 30,
 	symetry: "axial",
@@ -25,6 +28,7 @@ const BASE: PaintParams = {
 	tileSize: 5,
 	numberOfColors: 3,
 	colors: [],
+	selectedColorIndices: [],
 	text: "",
 	textColor: "#ffffff",
 	textPosition: "bottom-right",
@@ -73,15 +77,21 @@ describe("extractGrid", () => {
 		);
 	});
 
-	it("ignores numberOfColors once an explicit palette is given", () => {
-		// It used to matter: numberOfColors burned PRNG draws ahead of the grid, so
-		// the playground emitting numberOfColors=2 beside three custom colours
-		// silently produced a different pattern. Positional hashing removed that
-		// coupling — the grid no longer touches the PRNG at all.
-		const colors = ["#111111", "#222222", "#333333"];
-		expect(grid({ numberOfColors: 2, colors })).toEqual(
-			grid({ numberOfColors: 3, colors })
+	it("uses the requested number of colors from a larger owned palette", () => {
+		const colors = ["#111111", "#222222", "#333333", "#444444", "#555555"];
+		const two = extractGrid(
+			{ ...BASE, numberOfColors: 2, colors },
+			createStubCanvas()
 		);
+		const three = extractGrid(
+			{ ...BASE, numberOfColors: 3, colors },
+			createStubCanvas()
+		);
+
+		expect(two.colors).toHaveLength(2);
+		expect(two.colors.every((color) => colors.includes(color))).toBe(true);
+		expect(three.colors).toHaveLength(3);
+		expect(two.grid).not.toEqual(three.grid);
 	});
 
 	it("resolves an empty textColor to the background instead of an empty cell", () => {
@@ -149,6 +159,83 @@ describe("extractGrid", () => {
 	});
 });
 
+describe("selectPaintColors", () => {
+	const colors = ["#111111", "#222222", "#333333", "#444444", "#555555"];
+
+	it("selects one stable combination without duplicates", () => {
+		const params = { ...BASE, numberOfColors: 3, colors };
+		const selected = selectPaintColors(params);
+
+		expect(selected).toEqual(selectPaintColors(params));
+		expect(selected).toHaveLength(3);
+		expect(new Set(selected.map((paint) => paint.sourceIndex)).size).toBe(3);
+		expect(selected.every((paint) => colors.includes(paint.color))).toBe(true);
+	});
+
+	it("bases the choice on palette positions, not editable hex values", () => {
+		const before = selectPaintColors({ ...BASE, numberOfColors: 2, colors });
+		const edited = colors.map((_, index) => `#00000${index}`);
+		const after = selectPaintColors({
+			...BASE,
+			numberOfColors: 2,
+			colors: edited
+		});
+
+		expect(after.map((paint) => paint.sourceIndex)).toEqual(
+			before.map((paint) => paint.sourceIndex)
+		);
+	});
+
+	it("keeps the original order when the whole palette is used", () => {
+		expect(
+			selectPaintColors({ ...BASE, numberOfColors: colors.length, colors })
+		).toEqual(colors.map((color, sourceIndex) => ({ color, sourceIndex })));
+	});
+
+	it("uses an explicit manual selection in the chosen order", () => {
+		expect(
+			selectPaintColors({
+				...BASE,
+				numberOfColors: 3,
+				colors,
+				selectedColorIndices: [4, 1]
+			})
+		).toEqual([
+			{ color: colors[4], sourceIndex: 4 },
+			{ color: colors[1], sourceIndex: 1 }
+		]);
+	});
+
+	it("allows different combination seeds to choose different combinations", () => {
+		const combinations = ["alpha", "bravo", "charlie", "delta"].map(
+			(combinationSeed) =>
+				selectPaintColors({
+					...BASE,
+					combinationSeed,
+					numberOfColors: 2,
+					colors
+				})
+					.map((paint) => paint.sourceIndex)
+					.sort((a, b) => a - b)
+					.join(",")
+		);
+
+		expect(new Set(combinations).size).toBeGreaterThan(1);
+	});
+
+	it("does not change the combination when only the pattern seed changes", () => {
+		const params: PaintParams = { ...BASE, numberOfColors: 2, colors };
+		const anotherPattern: PaintParams = {
+			...params,
+			seed: "another-pattern"
+		};
+
+		expect(selectPaintColors(anotherPattern)).toEqual(
+			selectPaintColors(params)
+		);
+	});
+});
+
 describe("serializePaintParams / parsePaintParams", () => {
 	it("builds share links with the production origin", () => {
 		expect(
@@ -203,6 +290,7 @@ describe("serializePaintParams / parsePaintParams", () => {
 	it("round-trips every parameter available on the playground", () => {
 		const params: PaintParams = {
 			seed: "all-options",
+			combinationSeed: "color-options",
 			width: 17,
 			height: 19,
 			symetry: "tile",
@@ -210,6 +298,7 @@ describe("serializePaintParams / parsePaintParams", () => {
 			tileSize: 7,
 			numberOfColors: 4,
 			colors: ["#112233", "#445566", "#778899", "#aabbcc"],
+			selectedColorIndices: [3, 1, 2, 0],
 			text: "Codex 5",
 			textColor: "#fedcba",
 			textPosition: "top-left",
@@ -239,9 +328,30 @@ describe("serializePaintParams / parsePaintParams", () => {
 		);
 	});
 
-	it("normalises a NaN numberOfColors the same way the engine does", () => {
-		// The playground writes numberOfColors="" when custom colors are set,
-		// which parses to NaN; the engine reads that as `|| 1`.
+	it("uses every custom color for legacy links with a blank count", () => {
+		const parsed = parsePaintParams(
+			new URLSearchParams(
+				"colors=%23111111,%23222222,%23333333&numberOfColors="
+			)
+		);
+
+		expect(parsed.numberOfColors).toBe(3);
+		expect(parsed.combinationSeed).toBe(parsed.seed);
+		expect(parsed.selectedColorIndices).toEqual([]);
+		expect(extractGrid(parsed, createStubCanvas()).colors).toHaveLength(3);
+	});
+
+	it("clamps the requested count to the available custom palette", () => {
+		const parsed = parsePaintParams(
+			new URLSearchParams(
+				"colors=%23111111,%23222222,%23333333&numberOfColors=8"
+			)
+		);
+
+		expect(parsed.numberOfColors).toBe(3);
+	});
+
+	it("normalises an invalid requested color count", () => {
 		const params: PaintParams = {
 			...BASE,
 			numberOfColors: NaN,
@@ -281,6 +391,47 @@ describe("layoutKey", () => {
 		);
 		expect(layoutKey({ ...BASE, colors: two })).not.toBe(
 			layoutKey({ ...BASE, colors: [...two, "#ff0000"] })
+		);
+	});
+
+	it("ignores unused paints but tracks the requested combination size", () => {
+		const fullPalette = ["#111111", "#222222", "#333333", "#444444", "#555555"];
+		const withAnotherPaint = [...fullPalette, "#666666"];
+
+		expect(layoutKey({ ...BASE, numberOfColors: 2, colors: fullPalette })).toBe(
+			layoutKey({ ...BASE, numberOfColors: 2, colors: withAnotherPaint })
+		);
+		expect(
+			layoutKey({ ...BASE, numberOfColors: 2, colors: fullPalette })
+		).not.toBe(layoutKey({ ...BASE, numberOfColors: 3, colors: fullPalette }));
+		expect(
+			effectiveColorCount({
+				...BASE,
+				numberOfColors: 8,
+				colors: fullPalette
+			})
+		).toBe(fullPalette.length);
+	});
+
+	it("ignores the combination seed because it does not move cells", () => {
+		expect(layoutKey(BASE)).toBe(
+			layoutKey({ ...BASE, combinationSeed: "another-combination" })
+		);
+	});
+
+	it("tracks manual selection size but not which paints are selected", () => {
+		const colors = ["#111111", "#222222", "#333333", "#444444"];
+		const firstPair = {
+			...BASE,
+			colors,
+			selectedColorIndices: [0, 1]
+		};
+
+		expect(layoutKey(firstPair)).toBe(
+			layoutKey({ ...firstPair, selectedColorIndices: [2, 3] })
+		);
+		expect(layoutKey(firstPair)).not.toBe(
+			layoutKey({ ...firstPair, selectedColorIndices: [0, 1, 2] })
 		);
 	});
 

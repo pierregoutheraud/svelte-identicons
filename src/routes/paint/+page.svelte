@@ -23,6 +23,7 @@
 		productionShareUrl,
 		randomHex,
 		round,
+		selectPaintColors,
 		serializePaintParams,
 		tapeEndExtensionCm,
 		type PaintParams,
@@ -91,12 +92,45 @@
 	const grid = $derived(extraction.grid);
 	const cellIds = $derived(extraction.cellIds);
 	const engineColors = $derived(extraction.colors);
+	const selectedPaints = $derived(selectPaintColors(params));
+	const canGenerateCombination = $derived(
+		params.colors.length > selectedPaints.length
+	);
 	const palette = $derived(buildPalette(grid, cellIds));
+	const ownedPaints = $derived.by(() => {
+		const entriesBySourceIndex = new Map<number, PaletteEntry>();
+
+		for (const entry of palette) {
+			if (entry.sourceIndex === null) continue;
+			const selectedPaint = selectedPaints[entry.sourceIndex];
+			if (selectedPaint) {
+				entriesBySourceIndex.set(selectedPaint.sourceIndex, entry);
+			}
+		}
+
+		return params.colors.map((color, sourceIndex) => ({
+			color,
+			sourceIndex,
+			entry: entriesBySourceIndex.get(sourceIndex)
+		}));
+	});
+	const textPaints = $derived(
+		palette.filter((entry) => entry.sourceIndex === null)
+	);
 	const baseEntry = $derived(palette.find((entry) => entry.isBase));
 	const toPaint = $derived(
 		palette
 			.filter((entry) => !entry.isBase)
 			.reduce((acc, entry) => acc + entry.count, 0)
+	);
+	// The main playground treats every custom color as active. Give it only this
+	// pattern's selected combination so its canvas remains identical to paint mode.
+	const playgroundHref = $derived(
+		`/${serializePaintParams({
+			...params,
+			numberOfColors: engineColors.length,
+			colors: engineColors
+		})}`
 	);
 
 	const key = $derived(layoutKey(params));
@@ -324,8 +358,36 @@
 		saveProgress();
 	}
 
-	function handleGenerateSeed() {
+	function handleGeneratePattern() {
 		params = { ...params, seed: generateSeed() };
+	}
+
+	function handleGenerateCombination() {
+		if (!canGenerateCombination) return;
+		const current = selectedPaints
+			.map((paint) => paint.sourceIndex)
+			.sort((a, b) => a - b)
+			.join(",");
+
+		// A fresh random seed can occasionally rank the same subset first. Retry so
+		// the button visibly produces a different combination whenever one exists.
+		for (let attempt = 0; attempt < 20; attempt++) {
+			const combinationSeed = generateSeed();
+			const next = selectPaintColors({
+				...params,
+				combinationSeed,
+				selectedColorIndices: []
+			})
+				.map((paint) => paint.sourceIndex)
+				.sort((a, b) => a - b)
+				.join(",");
+
+			if (next !== current) {
+				params = { ...params, combinationSeed, selectedColorIndices: [] };
+				selectedPaintId = null;
+				return;
+			}
+		}
 	}
 
 	async function handleShare() {
@@ -347,26 +409,69 @@
 		return colors;
 	}
 
+	function sourceIndexForEntry(entry: PaletteEntry): number | null {
+		if (entry.sourceIndex === null) return null;
+		if (!params.colors.length) return entry.sourceIndex;
+		return selectedPaints[entry.sourceIndex]?.sourceIndex ?? null;
+	}
+
 	function handleChangeColor(entry: PaletteEntry, value: string) {
-		if (entry.sourceIndex === null) return;
+		const sourceIndex = sourceIndexForEntry(entry);
+		if (sourceIndex === null) return;
 		const colors = [...materializeColors()];
-		if (entry.sourceIndex >= colors.length) return;
-		colors[entry.sourceIndex] = value;
+		if (sourceIndex >= colors.length) return;
+		colors[sourceIndex] = value;
 		params = { ...params, colors };
+	}
+
+	function handleChangeOwnedColor(sourceIndex: number, value: string) {
+		if (sourceIndex >= params.colors.length) return;
+		const colors = [...params.colors];
+		colors[sourceIndex] = value;
+		params = { ...params, colors };
+	}
+
+	function handleToggleOwnedPaint(sourceIndex: number) {
+		const current = selectedPaints.map((paint) => paint.sourceIndex);
+		const isUsed = current.includes(sourceIndex);
+
+		if (isUsed && current.length <= 1) return;
+
+		const selectedColorIndices = isUsed
+			? current.filter((index) => index !== sourceIndex)
+			: [...current, sourceIndex];
+
+		params = {
+			...params,
+			selectedColorIndices,
+			numberOfColors: selectedColorIndices.length
+		};
+		// Palette clicks configure the combination; isolation stays in Painting.
+		selectedPaintId = null;
 	}
 
 	function handleAddColor() {
 		const colors = [...materializeColors(), randomHex()];
-		params = { ...params, colors, numberOfColors: colors.length };
+		params = { ...params, colors };
 	}
 
 	function handleRemoveColor() {
 		const colors = materializeColors().slice(0, -1);
 		if (colors.length < 1) return;
-		params = { ...params, colors, numberOfColors: colors.length };
+		const selectedColorIndices = params.selectedColorIndices.filter(
+			(index) => index < colors.length
+		);
+		params = {
+			...params,
+			colors,
+			selectedColorIndices,
+			numberOfColors: selectedColorIndices.length
+				? selectedColorIndices.length
+				: Math.min(params.numberOfColors, colors.length)
+		};
 	}
 
-	type NumericParam = "width" | "height" | "tileSize" | "numberOfColors";
+	type NumericParam = "width" | "height" | "tileSize";
 
 	function handleChangeNumber(key: NumericParam, event: Event) {
 		const value = (event.target as HTMLInputElement).valueAsNumber;
@@ -643,7 +748,7 @@
 					? "Copy failed"
 					: "Share"}
 		</button>
-		<a class="back" href={`/${serializePaintParams(params)}`}>Playground</a>
+		<a class="back" href={playgroundHref}>Playground</a>
 	</header>
 
 	<div class="body">
@@ -690,7 +795,7 @@
 						symetryAxis={params.symetryAxis}
 						tileSize={params.tileSize}
 						numberOfColors={params.numberOfColors}
-						colors={params.colors.length ? params.colors : undefined}
+						colors={engineColors}
 						text={params.text || undefined}
 						textColor={params.textColor}
 						textPosition={params.textPosition}
@@ -707,7 +812,7 @@
 				</div>
 				<div class="row">
 					<input type="text" bind:value={params.seed} placeholder="Seed" />
-					<button onclick={handleGenerateSeed}>Random</button>
+					<button onclick={handleGeneratePattern}>New pattern</button>
 				</div>
 				<div class="row">
 					<button class="ghost" onclick={() => handleVerify(previewCanvas)}>
@@ -723,60 +828,146 @@
 
 			<section class="panel">
 				<h2>My paints</h2>
-				<p class="hint">
-					Enter the hex of each tube you own. Changing a hex does not move a
-					single cell. Changing the <i>number</i> of colors redraws the pattern.
-				</p>
-
-				{#if !params.colors.length}
-					<label class="row">
-						<span class="tag">Generated colors</span>
-						<input
-							type="number"
-							min="1"
-							max="10"
-							value={params.numberOfColors}
-							oninput={(event) => handleChangeNumber("numberOfColors", event)}
-						/>
-					</label>
+				{#if params.colors.length}
+					<p class="hint">
+						Add every tube you own. The current combination uses
+						{engineColors.length} from your full palette. Click a swatch to include
+						or remove it. Changing a hex does not move a single cell.
+					</p>
+				{:else}
+					<p class="hint">
+						Choose how many colors to generate, or add a paint to start your
+						full palette.
+					</p>
 				{/if}
 
-				{#each palette as entry}
-					{@const editable = entry.sourceIndex !== null}
-					<div class="paint-row" class:selected={activePaintId === entry.id}>
-						<button
-							class="swatch"
-							style="background:{entry.color}"
-							title="Isolate {entry.label}"
-							onclick={() => handleSelectColor(entry.id)}
-						></button>
-						<span class="tag">{entry.label}</span>
-						{#if editable}
+				<p class="color-count">
+					<b>{engineColors.length}</b>
+					{engineColors.length === 1 ? "color" : "colors"} used
+					<span class="muted">
+						{params.colors.length
+							? `of ${params.colors.length}`
+							: "· generated"}
+					</span>
+				</p>
+
+				<div class="row">
+					<button
+						class="ghost"
+						disabled={!canGenerateCombination}
+						title={canGenerateCombination
+							? "Choose different paints without changing the pattern"
+							: "Add more paints than the number of colors used"}
+						onclick={handleGenerateCombination}
+					>
+						New color combination
+					</button>
+				</div>
+
+				{#if params.colors.length}
+					<p class="palette-heading">Full palette</p>
+					{#each ownedPaints as paint}
+						<div
+							class="paint-row"
+							class:used={Boolean(paint.entry)}
+							class:unused={!paint.entry}
+						>
+							<button
+								class="swatch"
+								style="background:{paint.color}"
+								title={paint.entry
+									? selectedPaints.length <= 1
+										? "At least one paint must be used"
+										: "Remove from this color combination"
+									: "Use in this color combination"}
+								aria-label={paint.entry
+									? `Remove ${paint.color} from the color combination`
+									: `Use ${paint.color} in the color combination`}
+								aria-pressed={Boolean(paint.entry)}
+								aria-disabled={Boolean(paint.entry) &&
+									selectedPaints.length <= 1}
+								onclick={() => handleToggleOwnedPaint(paint.sourceIndex)}
+							></button>
+							<span class="tag">{paint.entry?.label ?? "—"}</span>
 							<input
 								type="color"
-								value={entry.color}
-								oninput={(e) => handleChangeColor(entry, e.currentTarget.value)}
+								value={paint.color}
+								oninput={(event) =>
+									handleChangeOwnedColor(
+										paint.sourceIndex,
+										event.currentTarget.value
+									)}
 							/>
-						{:else}
+							<span class="hex" title="Click to select">{paint.color}</span>
+							{#if paint.entry}
+								<span class="count">
+									{paint.entry.count}
+									<span class="muted">({round(paint.entry.pct, 1)}%)</span>
+								</span>
+								{#if paint.entry.isBase}
+									<span class="badge">background</span>
+								{:else}
+									<span class="badge">used</span>
+								{/if}
+							{:else}
+								<span class="badge">available</span>
+							{/if}
+						</div>
+					{/each}
+
+					{#each textPaints as entry}
+						<div class="paint-row">
+							<span
+								class="swatch"
+								style="background:{entry.color}"
+								aria-hidden="true"
+							></span>
+							<span class="tag">{entry.label}</span>
 							<span class="tag muted">text</span>
-						{/if}
-						<!-- user-select: all, so one click selects the whole hex ready to
-						     copy rather than making you drag across 7 characters. -->
-						<span class="hex" title="Click to select">{entry.color}</span>
-						<span class="count">
-							{entry.count}
-							<span class="muted">({round(entry.pct, 1)}%)</span>
-						</span>
-						{#if entry.isBase}
-							<span class="badge">background</span>
-						{/if}
-					</div>
-				{/each}
+							<span class="hex" title="Click to select">{entry.color}</span>
+							<span class="count">
+								{entry.count}
+								<span class="muted">({round(entry.pct, 1)}%)</span>
+							</span>
+						</div>
+					{/each}
+				{:else}
+					<p class="palette-heading">Generated palette</p>
+					{#each palette as entry}
+						{@const editable = entry.sourceIndex !== null}
+						<div class="paint-row">
+							<span
+								class="swatch"
+								style="background:{entry.color}"
+								aria-hidden="true"
+							></span>
+							<span class="tag">{entry.label}</span>
+							{#if editable}
+								<input
+									type="color"
+									value={entry.color}
+									oninput={(event) =>
+										handleChangeColor(entry, event.currentTarget.value)}
+								/>
+							{:else}
+								<span class="tag muted">text</span>
+							{/if}
+							<span class="hex" title="Click to select">{entry.color}</span>
+							<span class="count">
+								{entry.count}
+								<span class="muted">({round(entry.pct, 1)}%)</span>
+							</span>
+							{#if entry.isBase}
+								<span class="badge">background</span>
+							{/if}
+						</div>
+					{/each}
+				{/if}
 
 				<div class="row">
 					<button onclick={handleRemoveColor}>-</button>
 					<button onclick={handleAddColor}>+</button>
-					<span class="hint inline">changes the pattern</span>
+					<span class="hint inline">edit the full palette</span>
 				</div>
 			</section>
 
@@ -1424,6 +1615,20 @@
 		margin-left: 4px;
 	}
 
+	.color-count {
+		margin: 0;
+		font-size: 13px;
+	}
+
+	.palette-heading {
+		margin: 2px 0 0;
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #b8bfc9;
+	}
+
 	.muted {
 		color: #6f7681;
 	}
@@ -1463,9 +1668,8 @@
 		font-size: 13px;
 	}
 
-	.paint-row.selected {
-		outline: 1px solid gold;
-		outline-offset: 3px;
+	.paint-row.unused {
+		opacity: 0.72;
 	}
 
 	.swatch {
@@ -1474,6 +1678,15 @@
 		padding: 0;
 		border: 1px solid #3a3f47;
 		flex-shrink: 0;
+	}
+
+	.swatch[aria-pressed="true"] {
+		border-color: gold;
+		box-shadow: 0 0 0 2px gold;
+	}
+
+	.swatch[aria-disabled="true"] {
+		cursor: not-allowed;
 	}
 
 	.tag {
