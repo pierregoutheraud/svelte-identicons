@@ -12,13 +12,15 @@ export interface PaintParams {
 	symetry: IdenticonOptions["symetry"];
 	symetryAxis: IdenticonOptions["symetryAxis"];
 	tileSize: number;
-	// How many colors a generated pattern uses. When `colors` contains the paints
-	// someone owns, the combination seed chooses this many without discarding any.
+	// How many colors the seed-generated palette uses. This remains available when
+	// the custom palette is active so switching sources does not lose the setting.
 	numberOfColors: number;
-	// The complete palette of paints available. Empty means "generate colors".
+	// Seed colors and the custom palette are separate, mutually exclusive sources.
+	colorSource: "seed" | "custom";
+	// The complete custom palette. Seed mode ignores it without discarding it.
 	colors: string[];
-	// Explicit palette indexes chosen by clicking owned paints. Empty means the
-	// combination seed chooses them.
+	// Explicit custom-palette indexes chosen by clicking owned paints. An empty
+	// list is a valid custom selection and produces no pattern.
 	selectedColorIndices: number[];
 	text: string;
 	textColor: string;
@@ -76,32 +78,40 @@ function validSelectedColorIndices(
 	);
 }
 
-/**
- * Selects a deterministic combination from the complete owned-paint palette.
- *
- * Ranking palette positions rather than hex values means correcting a sampled
- * color never changes which slots were chosen. Keeping the original order when
- * every paint is used preserves old `/paint` links exactly.
- */
+/** Resolves the explicit selection only when the custom source is active. */
 export function selectPaintColors(
-	params: Pick<
-		PaintParams,
-		"combinationSeed" | "numberOfColors" | "colors" | "selectedColorIndices"
-	>
+	params: Pick<PaintParams, "colorSource" | "colors" | "selectedColorIndices">
 ): SelectedPaintColor[] {
+	if (params.colorSource !== "custom") return [];
+
 	const available = params.colors.map((color, sourceIndex) => ({
 		color,
 		sourceIndex
 	}));
 	const selectedIndices = validSelectedColorIndices(params);
 
-	if (selectedIndices.length) {
-		return selectedIndices.map((sourceIndex) => available[sourceIndex]);
-	}
+	return selectedIndices.map((sourceIndex) => available[sourceIndex]);
+}
 
-	const count = Math.min(requestedPaintColorCount(params), available.length);
+/**
+ * Chooses a stable subset without changing or discarding the full palette.
+ * Ranking positions instead of hex values means editing a paint cannot change
+ * which slots were selected.
+ */
+export function generatePaintColorCombination(
+	params: Pick<PaintParams, "combinationSeed" | "numberOfColors" | "colors">,
+	count = requestedPaintColorCount(params)
+): SelectedPaintColor[] {
+	const available = params.colors.map((color, sourceIndex) => ({
+		color,
+		sourceIndex
+	}));
+	const requested = Math.floor(count);
+	const resolvedCount =
+		Number.isFinite(requested) && requested > 0 ? requested : 0;
+	const actualCount = Math.min(resolvedCount, available.length);
 
-	if (count >= available.length) return available;
+	if (actualCount >= available.length) return available;
 
 	return available
 		.map((paint) => ({
@@ -113,7 +123,7 @@ export function selectPaintColors(
 			)
 		}))
 		.sort((a, b) => a.rank - b.rank || a.sourceIndex - b.sourceIndex)
-		.slice(0, count)
+		.slice(0, actualCount)
 		.map(({ color, sourceIndex }) => ({ color, sourceIndex }));
 }
 
@@ -141,6 +151,7 @@ export const DEFAULT_PAINT_PARAMS: PaintParams = {
 	symetryAxis: "gap",
 	tileSize: 5,
 	numberOfColors: 3,
+	colorSource: "seed",
 	colors: [],
 	selectedColorIndices: [],
 	text: "",
@@ -200,6 +211,17 @@ export function extractGrid(
 } {
 	const selectedPaints = selectPaintColors(params);
 	const selectedColors = selectedPaints.map((paint) => paint.color);
+	const usesCustomPalette = params.colorSource === "custom";
+
+	if (usesCustomPalette && !selectedColors.length) {
+		return {
+			grid: [],
+			cellIds: [],
+			backgroundColor: "transparent",
+			colors: []
+		};
+	}
+
 	const target =
 		canvas ??
 		(typeof document !== "undefined"
@@ -213,8 +235,10 @@ export function extractGrid(
 		symetry: params.symetry,
 		symetryAxis: params.symetryAxis,
 		tileSize: params.tileSize,
-		numberOfColors: params.numberOfColors,
-		colors: selectedColors.length ? selectedColors : undefined,
+		numberOfColors: usesCustomPalette
+			? selectedColors.length
+			: params.numberOfColors,
+		colors: usesCustomPalette ? selectedColors : undefined,
 		text: params.text || undefined,
 		textColor: params.textColor || undefined,
 		textPosition: params.textPosition,
@@ -810,9 +834,9 @@ export function round(n: number, decimals = 2): number {
 
 /**
  * Complete and lossless, unlike createUrl() on the playground page. In paint
- * mode `colors` is the complete owned palette, `numberOfColors` is the size of
- * the selected combination, and either `combinationSeed` or an explicit list of
- * selected indexes chooses its members. All must survive a round-trip.
+ * mode `colors` is the complete owned palette while `selectedColorIndices`
+ * contains the active custom combination. The source choice and both palettes'
+ * settings must survive a round-trip.
  */
 export function serializePaintParams(
 	params: PaintParams,
@@ -826,7 +850,8 @@ export function serializePaintParams(
 		symetry: String(params.symetry),
 		symetryAxis: String(params.symetryAxis ?? DEFAULT_PAINT_PARAMS.symetryAxis),
 		tileSize: String(params.tileSize || DEFAULT_PAINT_PARAMS.tileSize),
-		numberOfColors: String(effectiveColorCount(params)),
+		numberOfColors: String(requestedPaintColorCount({ ...params, colors: [] })),
+		colorSource: params.colorSource,
 		colors: params.colors.join(","),
 		selectedColorIndices: params.selectedColorIndices.join(","),
 		text: params.text,
@@ -849,16 +874,14 @@ export function serializePaintParams(
 
 export function parsePaintParams(search: URLSearchParams): PaintParams {
 	const seed = search.get("seed") || generateSeed();
+	const combinationSeed = search.get("combinationSeed") || seed;
 	const colorsParam = search.get("colors");
 	const colors = colorsParam ? colorsParam.split(",").filter(Boolean) : [];
-	const requestedColorCount = Math.min(
-		intOr(
-			search.get("numberOfColors"),
-			colors.length || DEFAULT_PAINT_PARAMS.numberOfColors
-		),
-		colors.length || Number.POSITIVE_INFINITY
+	const requestedColorCount = intOr(
+		search.get("numberOfColors"),
+		colors.length || DEFAULT_PAINT_PARAMS.numberOfColors
 	);
-	const selectedColorIndices = [
+	const parsedSelectedColorIndices = [
 		...new Set(
 			(search.get("selectedColorIndices") || "")
 				.split(",")
@@ -870,12 +893,35 @@ export function parsePaintParams(search: URLSearchParams): PaintParams {
 				)
 		)
 	];
-	const numberOfColors = selectedColorIndices.length || requestedColorCount;
+	const colorSourceParam = search.get("colorSource");
+	const hasExplicitColorSource =
+		colorSourceParam === "seed" || colorSourceParam === "custom";
+	const colorSource = hasExplicitColorSource
+		? colorSourceParam
+		: colors.length
+			? "custom"
+			: "seed";
+	// Before colorSource existed, an empty index list meant an automatic custom
+	// combination. Materialise it while parsing so old links retain their image;
+	// in new links, an empty list deliberately means no selected custom paints.
+	const selectedColorIndices =
+		!hasExplicitColorSource &&
+		colorSource === "custom" &&
+		!parsedSelectedColorIndices.length
+			? generatePaintColorCombination(
+					{
+						combinationSeed,
+						numberOfColors: requestedColorCount,
+						colors
+					},
+					requestedColorCount
+				).map((paint) => paint.sourceIndex)
+			: parsedSelectedColorIndices;
 
 	return {
 		seed,
 		// Old URLs used the pattern seed for the combination as well.
-		combinationSeed: search.get("combinationSeed") || seed,
+		combinationSeed,
 		width: intOr(search.get("width"), DEFAULT_PAINT_PARAMS.width),
 		height: intOr(search.get("height"), DEFAULT_PAINT_PARAMS.height),
 		symetry: (search.get("symetry") ||
@@ -883,7 +929,8 @@ export function parsePaintParams(search: URLSearchParams): PaintParams {
 		symetryAxis: (search.get("symetryAxis") ||
 			DEFAULT_PAINT_PARAMS.symetryAxis) as IdenticonOptions["symetryAxis"],
 		tileSize: intOr(search.get("tileSize"), DEFAULT_PAINT_PARAMS.tileSize),
-		numberOfColors,
+		numberOfColors: requestedColorCount,
+		colorSource,
 		colors,
 		selectedColorIndices,
 		text: search.get("text") || "",
@@ -951,9 +998,8 @@ export function layoutKey(params: PaintParams): string {
 		// conditionally: otherwise editing it would discard painting progress in the
 		// five modes where it does nothing.
 		params.symetry === "tile" ? params.tileSize : 0,
-		// Only the number used matters. Adding an available paint may change which
-		// hex is assigned to a slot, but it does not move that slot's cells, so the
-		// painting progress remains valid.
+		// Only the active count moves cells. Source changes and edits that preserve
+		// the count can reuse the same painting progress.
 		effectiveColorCount(params),
 		params.text,
 		params.textPosition,
@@ -963,10 +1009,9 @@ export function layoutKey(params: PaintParams): string {
 }
 
 export function effectiveColorCount(params: PaintParams): number {
-	const selectedColorIndices = validSelectedColorIndices(params);
-	if (selectedColorIndices.length) return selectedColorIndices.length;
+	if (params.colorSource === "custom") {
+		return validSelectedColorIndices(params).length;
+	}
 
-	return params.colors.length
-		? Math.min(params.colors.length, requestedPaintColorCount(params))
-		: requestedPaintColorCount(params);
+	return requestedPaintColorCount({ ...params, colors: [] });
 }

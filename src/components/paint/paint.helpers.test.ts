@@ -7,6 +7,7 @@ import {
 	effectiveColorCount,
 	extractGrid,
 	formatCell,
+	generatePaintColorCombination,
 	layoutKey,
 	measure,
 	parsePaintParams,
@@ -27,6 +28,7 @@ const BASE: PaintParams = {
 	symetryAxis: "gap",
 	tileSize: 5,
 	numberOfColors: 3,
+	colorSource: "seed",
 	colors: [],
 	selectedColorIndices: [],
 	text: "",
@@ -64,8 +66,24 @@ describe("extractGrid", () => {
 		const mine = ["#f4f2ec", "#c4452a", "#1b3a5c"];
 		const theirs = ["#000000", "#123456", "#abcdef"];
 
-		expect(pattern(mine, grid({ colors: mine }))).toEqual(
-			pattern(theirs, grid({ colors: theirs }))
+		expect(
+			pattern(
+				mine,
+				grid({
+					colorSource: "custom",
+					colors: mine,
+					selectedColorIndices: [0, 1, 2]
+				})
+			)
+		).toEqual(
+			pattern(
+				theirs,
+				grid({
+					colorSource: "custom",
+					colors: theirs,
+					selectedColorIndices: [0, 1, 2]
+				})
+			)
 		);
 	});
 
@@ -77,14 +95,24 @@ describe("extractGrid", () => {
 		);
 	});
 
-	it("uses the requested number of colors from a larger owned palette", () => {
+	it("uses the explicitly selected colors from a larger owned palette", () => {
 		const colors = ["#111111", "#222222", "#333333", "#444444", "#555555"];
 		const two = extractGrid(
-			{ ...BASE, numberOfColors: 2, colors },
+			{
+				...BASE,
+				colorSource: "custom",
+				colors,
+				selectedColorIndices: [1, 3]
+			},
 			createStubCanvas()
 		);
 		const three = extractGrid(
-			{ ...BASE, numberOfColors: 3, colors },
+			{
+				...BASE,
+				colorSource: "custom",
+				colors,
+				selectedColorIndices: [1, 3, 4]
+			},
 			createStubCanvas()
 		);
 
@@ -92,6 +120,25 @@ describe("extractGrid", () => {
 		expect(two.colors.every((color) => colors.includes(color))).toBe(true);
 		expect(three.colors).toHaveLength(3);
 		expect(two.grid).not.toEqual(three.grid);
+	});
+
+	it("returns an empty pattern for an empty custom selection", () => {
+		const extraction = extractGrid(
+			{
+				...BASE,
+				colorSource: "custom",
+				colors: ["#111111", "#222222"],
+				selectedColorIndices: []
+			},
+			createStubCanvas()
+		);
+
+		expect(extraction).toEqual({
+			grid: [],
+			cellIds: [],
+			backgroundColor: "transparent",
+			colors: []
+		});
 	});
 
 	it("resolves an empty textColor to the background instead of an empty cell", () => {
@@ -139,7 +186,12 @@ describe("extractGrid", () => {
 		// colors come back in engine order.
 		const generated = extractGrid(BASE, createStubCanvas());
 		const frozen = extractGrid(
-			{ ...BASE, colors: generated.colors },
+			{
+				...BASE,
+				colorSource: "custom",
+				colors: generated.colors,
+				selectedColorIndices: generated.colors.map((_, index) => index)
+			},
 			createStubCanvas()
 		);
 
@@ -151,7 +203,12 @@ describe("extractGrid", () => {
 		// Guards the mistake of handing back buildPalette's display order.
 		const generated = extractGrid(BASE, createStubCanvas());
 		const shuffled = extractGrid(
-			{ ...BASE, colors: [...generated.colors].reverse() },
+			{
+				...BASE,
+				colorSource: "custom",
+				colors: [...generated.colors].reverse(),
+				selectedColorIndices: generated.colors.map((_, index) => index)
+			},
 			createStubCanvas()
 		);
 
@@ -159,23 +216,27 @@ describe("extractGrid", () => {
 	});
 });
 
-describe("selectPaintColors", () => {
+describe("custom paint selection", () => {
 	const colors = ["#111111", "#222222", "#333333", "#444444", "#555555"];
 
-	it("selects one stable combination without duplicates", () => {
+	it("generates one stable combination without duplicates", () => {
 		const params = { ...BASE, numberOfColors: 3, colors };
-		const selected = selectPaintColors(params);
+		const selected = generatePaintColorCombination(params);
 
-		expect(selected).toEqual(selectPaintColors(params));
+		expect(selected).toEqual(generatePaintColorCombination(params));
 		expect(selected).toHaveLength(3);
 		expect(new Set(selected.map((paint) => paint.sourceIndex)).size).toBe(3);
 		expect(selected.every((paint) => colors.includes(paint.color))).toBe(true);
 	});
 
 	it("bases the choice on palette positions, not editable hex values", () => {
-		const before = selectPaintColors({ ...BASE, numberOfColors: 2, colors });
+		const before = generatePaintColorCombination({
+			...BASE,
+			numberOfColors: 2,
+			colors
+		});
 		const edited = colors.map((_, index) => `#00000${index}`);
-		const after = selectPaintColors({
+		const after = generatePaintColorCombination({
 			...BASE,
 			numberOfColors: 2,
 			colors: edited
@@ -188,7 +249,11 @@ describe("selectPaintColors", () => {
 
 	it("keeps the original order when the whole palette is used", () => {
 		expect(
-			selectPaintColors({ ...BASE, numberOfColors: colors.length, colors })
+			generatePaintColorCombination({
+				...BASE,
+				numberOfColors: colors.length,
+				colors
+			})
 		).toEqual(colors.map((color, sourceIndex) => ({ color, sourceIndex })));
 	});
 
@@ -196,7 +261,7 @@ describe("selectPaintColors", () => {
 		expect(
 			selectPaintColors({
 				...BASE,
-				numberOfColors: 3,
+				colorSource: "custom",
 				colors,
 				selectedColorIndices: [4, 1]
 			})
@@ -206,10 +271,32 @@ describe("selectPaintColors", () => {
 		]);
 	});
 
+	it("allows every custom paint to be unselected", () => {
+		expect(
+			selectPaintColors({
+				...BASE,
+				colorSource: "custom",
+				colors,
+				selectedColorIndices: []
+			})
+		).toEqual([]);
+	});
+
+	it("ignores the saved custom selection while seed colors are active", () => {
+		expect(
+			selectPaintColors({
+				...BASE,
+				colorSource: "seed",
+				colors,
+				selectedColorIndices: [4, 1]
+			})
+		).toEqual([]);
+	});
+
 	it("allows different combination seeds to choose different combinations", () => {
 		const combinations = ["alpha", "bravo", "charlie", "delta"].map(
 			(combinationSeed) =>
-				selectPaintColors({
+				generatePaintColorCombination({
 					...BASE,
 					combinationSeed,
 					numberOfColors: 2,
@@ -230,8 +317,8 @@ describe("selectPaintColors", () => {
 			seed: "another-pattern"
 		};
 
-		expect(selectPaintColors(anotherPattern)).toEqual(
-			selectPaintColors(params)
+		expect(generatePaintColorCombination(anotherPattern)).toEqual(
+			generatePaintColorCombination(params)
 		);
 	});
 });
@@ -297,6 +384,7 @@ describe("serializePaintParams / parsePaintParams", () => {
 			symetryAxis: "column",
 			tileSize: 7,
 			numberOfColors: 4,
+			colorSource: "custom",
 			colors: ["#112233", "#445566", "#778899", "#aabbcc"],
 			selectedColorIndices: [3, 1, 2, 0],
 			text: "Codex 5",
@@ -336,19 +424,36 @@ describe("serializePaintParams / parsePaintParams", () => {
 		);
 
 		expect(parsed.numberOfColors).toBe(3);
+		expect(parsed.colorSource).toBe("custom");
 		expect(parsed.combinationSeed).toBe(parsed.seed);
-		expect(parsed.selectedColorIndices).toEqual([]);
+		expect(parsed.selectedColorIndices).toEqual([0, 1, 2]);
 		expect(extractGrid(parsed, createStubCanvas()).colors).toHaveLength(3);
 	});
 
-	it("clamps the requested count to the available custom palette", () => {
+	it("preserves the seed color count independently of the custom palette", () => {
 		const parsed = parsePaintParams(
 			new URLSearchParams(
 				"colors=%23111111,%23222222,%23333333&numberOfColors=8"
 			)
 		);
 
-		expect(parsed.numberOfColors).toBe(3);
+		expect(parsed.numberOfColors).toBe(8);
+		expect(parsed.selectedColorIndices).toHaveLength(3);
+	});
+
+	it("round-trips a custom palette with every paint unselected", () => {
+		const params: PaintParams = {
+			...BASE,
+			colorSource: "custom",
+			colors: ["#111111", "#222222"],
+			selectedColorIndices: []
+		};
+		const parsed = parsePaintParams(
+			new URLSearchParams(serializePaintParams(params))
+		);
+
+		expect(parsed).toEqual(params);
+		expect(extractGrid(parsed, createStubCanvas()).grid).toEqual([]);
 	});
 
 	it("normalises an invalid requested color count", () => {
@@ -382,35 +487,47 @@ describe("layoutKey", () => {
 		);
 	});
 
-	it("ignores hex values but not the color count", () => {
+	it("ignores a saved custom palette while seed colors are active", () => {
 		const two = ["#000000", "#ffffff"];
 		const twoOther = ["#123456", "#abcdef"];
 
 		expect(layoutKey({ ...BASE, colors: two })).toBe(
 			layoutKey({ ...BASE, colors: twoOther })
 		);
-		expect(layoutKey({ ...BASE, colors: two })).not.toBe(
+		expect(layoutKey({ ...BASE, colors: two })).toBe(
 			layoutKey({ ...BASE, colors: [...two, "#ff0000"] })
+		);
+		expect(layoutKey({ ...BASE, numberOfColors: 2 })).not.toBe(
+			layoutKey({ ...BASE, numberOfColors: 3 })
 		);
 	});
 
-	it("ignores unused paints but tracks the requested combination size", () => {
+	it("ignores unused paints but tracks the custom selection size", () => {
 		const fullPalette = ["#111111", "#222222", "#333333", "#444444", "#555555"];
 		const withAnotherPaint = [...fullPalette, "#666666"];
+		const customPair = {
+			...BASE,
+			colorSource: "custom" as const,
+			selectedColorIndices: [0, 1]
+		};
 
-		expect(layoutKey({ ...BASE, numberOfColors: 2, colors: fullPalette })).toBe(
-			layoutKey({ ...BASE, numberOfColors: 2, colors: withAnotherPaint })
+		expect(layoutKey({ ...customPair, colors: fullPalette })).toBe(
+			layoutKey({ ...customPair, colors: withAnotherPaint })
+		);
+		expect(layoutKey({ ...customPair, colors: fullPalette })).not.toBe(
+			layoutKey({
+				...customPair,
+				colors: fullPalette,
+				selectedColorIndices: [0, 1, 2]
+			})
 		);
 		expect(
-			layoutKey({ ...BASE, numberOfColors: 2, colors: fullPalette })
-		).not.toBe(layoutKey({ ...BASE, numberOfColors: 3, colors: fullPalette }));
-		expect(
 			effectiveColorCount({
-				...BASE,
+				...customPair,
 				numberOfColors: 8,
 				colors: fullPalette
 			})
-		).toBe(fullPalette.length);
+		).toBe(2);
 	});
 
 	it("ignores the combination seed because it does not move cells", () => {
@@ -423,6 +540,7 @@ describe("layoutKey", () => {
 		const colors = ["#111111", "#222222", "#333333", "#444444"];
 		const firstPair = {
 			...BASE,
+			colorSource: "custom" as const,
 			colors,
 			selectedColorIndices: [0, 1]
 		};
@@ -440,7 +558,9 @@ describe("layoutKey", () => {
 		const generated: PaintParams = { ...BASE, numberOfColors: 3, colors: [] };
 		const frozen: PaintParams = {
 			...generated,
-			colors: extractGrid(generated, createStubCanvas()).colors
+			colorSource: "custom",
+			colors: extractGrid(generated, createStubCanvas()).colors,
+			selectedColorIndices: [0, 1, 2]
 		};
 
 		expect(layoutKey(frozen)).toBe(layoutKey(generated));
@@ -484,7 +604,12 @@ describe("buildPalette", () => {
 	it("keeps duplicate hex values as separate paint slots", () => {
 		const duplicate = "#aabbcc";
 		const extraction = extractGrid(
-			{ ...BASE, colors: [duplicate, duplicate, "#112233"] },
+			{
+				...BASE,
+				colorSource: "custom",
+				colors: [duplicate, duplicate, "#112233"],
+				selectedColorIndices: [0, 1, 2]
+			},
 			createStubCanvas()
 		);
 		const matching = buildPalette(extraction.grid, extraction.cellIds).filter(

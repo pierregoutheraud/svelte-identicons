@@ -15,6 +15,7 @@
 		buildTapePattern,
 		colorCells,
 		extractGrid,
+		generatePaintColorCombination,
 		generateSeed,
 		layoutKey,
 		measure,
@@ -94,11 +95,18 @@
 	const engineColors = $derived(extraction.colors);
 	const selectedPaints = $derived(selectPaintColors(params));
 	const canGenerateCombination = $derived(
-		params.colors.length > selectedPaints.length
+		params.colorSource === "custom" &&
+			selectedPaints.length > 0 &&
+			params.colors.length > selectedPaints.length
 	);
-	const palette = $derived(buildPalette(grid, cellIds));
+	const palette = $derived(
+		engineColors.length ? buildPalette(grid, cellIds) : []
+	);
 	const ownedPaints = $derived.by(() => {
 		const entriesBySourceIndex = new Map<number, PaletteEntry>();
+		const selectedSourceIndices = new Set(
+			selectedPaints.map((paint) => paint.sourceIndex)
+		);
 
 		for (const entry of palette) {
 			if (entry.sourceIndex === null) continue;
@@ -111,6 +119,7 @@
 		return params.colors.map((color, sourceIndex) => ({
 			color,
 			sourceIndex,
+			selected: selectedSourceIndices.has(sourceIndex),
 			entry: entriesBySourceIndex.get(sourceIndex)
 		}));
 	});
@@ -128,8 +137,10 @@
 	const playgroundHref = $derived(
 		`/${serializePaintParams({
 			...params,
-			numberOfColors: engineColors.length,
-			colors: engineColors
+			numberOfColors: engineColors.length || params.numberOfColors,
+			colorSource: engineColors.length ? "custom" : "seed",
+			colors: engineColors,
+			selectedColorIndices: engineColors.map((_, index) => index)
 		})}`
 	);
 
@@ -373,21 +384,31 @@
 		// the button visibly produces a different combination whenever one exists.
 		for (let attempt = 0; attempt < 20; attempt++) {
 			const combinationSeed = generateSeed();
-			const next = selectPaintColors({
-				...params,
-				combinationSeed,
-				selectedColorIndices: []
-			})
+			const nextPaints = generatePaintColorCombination(
+				{ ...params, combinationSeed },
+				selectedPaints.length
+			);
+			const next = nextPaints
 				.map((paint) => paint.sourceIndex)
 				.sort((a, b) => a - b)
 				.join(",");
 
 			if (next !== current) {
-				params = { ...params, combinationSeed, selectedColorIndices: [] };
+				params = {
+					...params,
+					combinationSeed,
+					selectedColorIndices: nextPaints.map((paint) => paint.sourceIndex)
+				};
 				selectedPaintId = null;
 				return;
 			}
 		}
+	}
+
+	function handleColorSource(colorSource: PaintParams["colorSource"]) {
+		params = { ...params, colorSource };
+		selectedPaintId = null;
+		verifyStatus = "";
 	}
 
 	async function handleShare() {
@@ -401,29 +422,6 @@
 		shareResetTimer = setTimeout(() => (shareStatus = "idle"), 2000);
 	}
 
-	/** Freezes the generated palette into editable slots, in engine order. */
-	function materializeColors(): string[] {
-		if (params.colors.length) return params.colors;
-		const colors = [...engineColors];
-		params = { ...params, colors };
-		return colors;
-	}
-
-	function sourceIndexForEntry(entry: PaletteEntry): number | null {
-		if (entry.sourceIndex === null) return null;
-		if (!params.colors.length) return entry.sourceIndex;
-		return selectedPaints[entry.sourceIndex]?.sourceIndex ?? null;
-	}
-
-	function handleChangeColor(entry: PaletteEntry, value: string) {
-		const sourceIndex = sourceIndexForEntry(entry);
-		if (sourceIndex === null) return;
-		const colors = [...materializeColors()];
-		if (sourceIndex >= colors.length) return;
-		colors[sourceIndex] = value;
-		params = { ...params, colors };
-	}
-
 	function handleChangeOwnedColor(sourceIndex: number, value: string) {
 		if (sourceIndex >= params.colors.length) return;
 		const colors = [...params.colors];
@@ -435,39 +433,33 @@
 		const current = selectedPaints.map((paint) => paint.sourceIndex);
 		const isUsed = current.includes(sourceIndex);
 
-		if (isUsed && current.length <= 1) return;
-
 		const selectedColorIndices = isUsed
 			? current.filter((index) => index !== sourceIndex)
 			: [...current, sourceIndex];
 
 		params = {
 			...params,
-			selectedColorIndices,
-			numberOfColors: selectedColorIndices.length
+			colorSource: "custom",
+			selectedColorIndices
 		};
 		// Palette clicks configure the combination; isolation stays in Painting.
 		selectedPaintId = null;
 	}
 
 	function handleAddColor() {
-		const colors = [...materializeColors(), randomHex()];
+		const colors = [...params.colors, randomHex()];
 		params = { ...params, colors };
 	}
 
 	function handleRemoveColor() {
-		const colors = materializeColors().slice(0, -1);
-		if (colors.length < 1) return;
+		const colors = params.colors.slice(0, -1);
 		const selectedColorIndices = params.selectedColorIndices.filter(
 			(index) => index < colors.length
 		);
 		params = {
 			...params,
 			colors,
-			selectedColorIndices,
-			numberOfColors: selectedColorIndices.length
-				? selectedColorIndices.length
-				: Math.min(params.numberOfColors, colors.length)
+			selectedColorIndices
 		};
 	}
 
@@ -754,30 +746,37 @@
 	<div class="body">
 		<section class="grid-pane" use:observeElementSize={handleGridPaneSize}>
 			<div class="grid-holder">
-				<PaintGrid
-					{grid}
-					{cellIds}
-					width={params.width}
-					height={params.height}
-					baseCellId={baseEntry?.id ?? ""}
-					activeCellId={activePaintId}
-					{painted}
-					{focusRow}
-					{focusIndex}
-					{cellPx}
-					{squareCm}
-					canvasMarginXCm={measurements.marginXCm}
-					canvasMarginYCm={measurements.marginYCm}
-					{sheetWidthPx}
-					{sheetHeightPx}
-					sheetColor={canvasColor}
-					tapeSegments={tapePattern.segments}
-					showTape={showTapeOverlay}
-					tapeGuideIndex={currentTape ? tapeGuideIndex : null}
-					{showGuides}
-					symetry={params.symetry}
-					onToggleCell={handleToggleCell}
-				/>
+				{#if engineColors.length}
+					<PaintGrid
+						{grid}
+						{cellIds}
+						width={params.width}
+						height={params.height}
+						baseCellId={baseEntry?.id ?? ""}
+						activeCellId={activePaintId}
+						{painted}
+						{focusRow}
+						{focusIndex}
+						{cellPx}
+						{squareCm}
+						canvasMarginXCm={measurements.marginXCm}
+						canvasMarginYCm={measurements.marginYCm}
+						{sheetWidthPx}
+						{sheetHeightPx}
+						sheetColor={canvasColor}
+						tapeSegments={tapePattern.segments}
+						showTape={showTapeOverlay}
+						tapeGuideIndex={currentTape ? tapeGuideIndex : null}
+						{showGuides}
+						symetry={params.symetry}
+						onToggleCell={handleToggleCell}
+					/>
+				{:else}
+					<div class="empty-pattern" role="status">
+						<strong>No custom paints selected</strong>
+						<span>Select a swatch in Custom palette to build the pattern.</span>
+					</div>
+				{/if}
 			</div>
 		</section>
 
@@ -785,23 +784,27 @@
 			<section class="panel">
 				<h2>Identicon</h2>
 				<div class="preview">
-					<Identicon
-						bind:canvasElement={previewCanvas}
-						seed={params.seed}
-						width={params.width}
-						height={params.height}
-						pixelSize={4}
-						symetry={params.symetry}
-						symetryAxis={params.symetryAxis}
-						tileSize={params.tileSize}
-						numberOfColors={params.numberOfColors}
-						colors={engineColors}
-						text={params.text || undefined}
-						textColor={params.textColor}
-						textPosition={params.textPosition}
-						textFont={params.textFont}
-						onColors={undefined}
-					/>
+					{#if engineColors.length}
+						<Identicon
+							bind:canvasElement={previewCanvas}
+							seed={params.seed}
+							width={params.width}
+							height={params.height}
+							pixelSize={4}
+							symetry={params.symetry}
+							symetryAxis={params.symetryAxis}
+							tileSize={params.tileSize}
+							numberOfColors={engineColors.length}
+							colors={engineColors}
+							text={params.text || undefined}
+							textColor={params.textColor}
+							textPosition={params.textPosition}
+							textFont={params.textFont}
+							onColors={undefined}
+						/>
+					{:else}
+						<div class="empty-preview" aria-hidden="true"></div>
+					{/if}
 					<div class="preview-meta">
 						<p>{grid.length} cells</p>
 						<p><b>{toPaint}</b> foreground cells</p>
@@ -815,7 +818,11 @@
 					<button onclick={handleGeneratePattern}>New pattern</button>
 				</div>
 				<div class="row">
-					<button class="ghost" onclick={() => handleVerify(previewCanvas)}>
+					<button
+						class="ghost"
+						disabled={!engineColors.length}
+						onclick={() => handleVerify(previewCanvas)}
+					>
 						Check grid matches canvas
 					</button>
 					{#if verifyStatus}
@@ -827,93 +834,136 @@
 			</section>
 
 			<section class="panel">
-				<h2>My paints</h2>
-				{#if params.colors.length}
-					<p class="hint">
-						Add every tube you own. The current combination uses
-						{engineColors.length} from your full palette. Click a swatch to include
-						or remove it. Changing a hex does not move a single cell.
-					</p>
-				{:else}
-					<p class="hint">
-						Choose how many colors to generate, or add a paint to start your
-						full palette.
-					</p>
-				{/if}
-
-				<p class="color-count">
-					<b>{engineColors.length}</b>
-					{engineColors.length === 1 ? "color" : "colors"} used
-					<span class="muted">
-						{params.colors.length
-							? `of ${params.colors.length}`
-							: "· generated"}
-					</span>
-				</p>
-
-				<div class="row">
+				<h2>Colors</h2>
+				<div class="color-sources" role="radiogroup" aria-label="Color source">
 					<button
-						class="ghost"
-						disabled={!canGenerateCombination}
-						title={canGenerateCombination
-							? "Choose different paints without changing the pattern"
-							: "Add more paints than the number of colors used"}
-						onclick={handleGenerateCombination}
+						class:on={params.colorSource === "seed"}
+						role="radio"
+						aria-checked={params.colorSource === "seed"}
+						onclick={() => handleColorSource("seed")}
 					>
-						New color combination
+						<strong>Seed colors</strong>
+						<span>Generated automatically</span>
+					</button>
+					<button
+						class:on={params.colorSource === "custom"}
+						role="radio"
+						aria-checked={params.colorSource === "custom"}
+						onclick={() => handleColorSource("custom")}
+					>
+						<strong>Custom palette</strong>
+						<span>Your paints and selection</span>
 					</button>
 				</div>
 
-				{#if params.colors.length}
-					<p class="palette-heading">Full palette</p>
-					{#each ownedPaints as paint}
-						<div
-							class="paint-row"
-							class:used={Boolean(paint.entry)}
-							class:unused={!paint.entry}
-						>
-							<button
+				{#if params.colorSource === "seed"}
+					<p class="hint">
+						These colors come from the pattern seed. Your custom palette stays
+						saved and is not used in this mode.
+					</p>
+					<p class="color-count">
+						<b>{engineColors.length}</b>
+						{engineColors.length === 1 ? "seed color" : "seed colors"}
+					</p>
+					<p class="palette-heading">Seed colors</p>
+					{#each palette as entry}
+						<div class="paint-row">
+							<span
 								class="swatch"
-								style="background:{paint.color}"
-								title={paint.entry
-									? selectedPaints.length <= 1
-										? "At least one paint must be used"
-										: "Remove from this color combination"
-									: "Use in this color combination"}
-								aria-label={paint.entry
-									? `Remove ${paint.color} from the color combination`
-									: `Use ${paint.color} in the color combination`}
-								aria-pressed={Boolean(paint.entry)}
-								aria-disabled={Boolean(paint.entry) &&
-									selectedPaints.length <= 1}
-								onclick={() => handleToggleOwnedPaint(paint.sourceIndex)}
-							></button>
-							<span class="tag">{paint.entry?.label ?? "—"}</span>
-							<input
-								type="color"
-								value={paint.color}
-								oninput={(event) =>
-									handleChangeOwnedColor(
-										paint.sourceIndex,
-										event.currentTarget.value
-									)}
-							/>
-							<span class="hex" title="Click to select">{paint.color}</span>
-							{#if paint.entry}
-								<span class="count">
-									{paint.entry.count}
-									<span class="muted">({round(paint.entry.pct, 1)}%)</span>
-								</span>
-								{#if paint.entry.isBase}
-									<span class="badge">background</span>
-								{:else}
-									<span class="badge">used</span>
-								{/if}
-							{:else}
-								<span class="badge">available</span>
+								style="background:{entry.color}"
+								aria-hidden="true"
+							></span>
+							<span class="tag">{entry.label}</span>
+							<span class="hex" title="Click to select">{entry.color}</span>
+							<span class="count">
+								{entry.count}
+								<span class="muted">({round(entry.pct, 1)}%)</span>
+							</span>
+							{#if entry.isBase}
+								<span class="badge">background</span>
 							{/if}
 						</div>
 					{/each}
+				{:else}
+					<p class="hint">
+						Add every paint you own, then click its swatch to include or remove
+						it. You can leave all paints unselected. Changing a hex does not
+						move any cells.
+					</p>
+					<p class="color-count">
+						<b>{selectedPaints.length}</b>
+						{selectedPaints.length === 1 ? "color" : "colors"} used
+						<span class="muted">of {params.colors.length}</span>
+					</p>
+
+					<div class="row">
+						<button
+							class="ghost"
+							disabled={!canGenerateCombination}
+							title={canGenerateCombination
+								? "Choose different paints without changing the pattern"
+								: selectedPaints.length
+									? "Add more paints than the number of colors used"
+									: "Select at least one paint first"}
+							onclick={handleGenerateCombination}
+						>
+							New color combination
+						</button>
+					</div>
+
+					<p class="palette-heading">Full palette</p>
+					{#if ownedPaints.length}
+						{#each ownedPaints as paint}
+							<div
+								class="paint-row"
+								class:used={paint.selected}
+								class:unused={!paint.selected}
+							>
+								<button
+									class="swatch"
+									style="background:{paint.color}"
+									title={paint.selected
+										? "Remove from this color combination"
+										: "Use in this color combination"}
+									aria-label={paint.selected
+										? `Remove ${paint.color} from the color combination`
+										: `Use ${paint.color} in the color combination`}
+									aria-pressed={paint.selected}
+									onclick={() => handleToggleOwnedPaint(paint.sourceIndex)}
+								></button>
+								<span class="tag">{paint.entry?.label ?? "—"}</span>
+								<input
+									type="color"
+									value={paint.color}
+									oninput={(event) =>
+										handleChangeOwnedColor(
+											paint.sourceIndex,
+											event.currentTarget.value
+										)}
+								/>
+								<span class="hex" title="Click to select">{paint.color}</span>
+								{#if paint.entry}
+									<span class="count">
+										{paint.entry.count}
+										<span class="muted">({round(paint.entry.pct, 1)}%)</span>
+									</span>
+									{#if paint.entry.isBase}
+										<span class="badge">background</span>
+									{:else}
+										<span class="badge">used</span>
+									{/if}
+								{:else if paint.selected}
+									<span class="badge">selected</span>
+								{:else}
+									<span class="badge">available</span>
+								{/if}
+							</div>
+						{/each}
+					{:else}
+						<p class="empty-palette">
+							No custom paints yet. Add your first paint below.
+						</p>
+					{/if}
 
 					{#each textPaints as entry}
 						<div class="paint-row">
@@ -931,92 +981,76 @@
 							</span>
 						</div>
 					{/each}
-				{:else}
-					<p class="palette-heading">Generated palette</p>
-					{#each palette as entry}
-						{@const editable = entry.sourceIndex !== null}
-						<div class="paint-row">
-							<span
-								class="swatch"
-								style="background:{entry.color}"
-								aria-hidden="true"
-							></span>
-							<span class="tag">{entry.label}</span>
-							{#if editable}
-								<input
-									type="color"
-									value={entry.color}
-									oninput={(event) =>
-										handleChangeColor(entry, event.currentTarget.value)}
-								/>
-							{:else}
-								<span class="tag muted">text</span>
-							{/if}
-							<span class="hex" title="Click to select">{entry.color}</span>
-							<span class="count">
-								{entry.count}
-								<span class="muted">({round(entry.pct, 1)}%)</span>
-							</span>
-							{#if entry.isBase}
-								<span class="badge">background</span>
-							{/if}
-						</div>
-					{/each}
-				{/if}
 
-				<div class="row">
-					<button onclick={handleRemoveColor}>-</button>
-					<button onclick={handleAddColor}>+</button>
-					<span class="hint inline">edit the full palette</span>
-				</div>
+					<div class="row">
+						<button
+							disabled={!params.colors.length}
+							aria-label="Remove the last custom paint"
+							onclick={handleRemoveColor}>-</button
+						>
+						<button aria-label="Add a custom paint" onclick={handleAddColor}
+							>+</button
+						>
+						<span class="hint inline">edit the full palette</span>
+					</div>
+				{/if}
 			</section>
 
 			<section class="panel">
 				<h2>Painting</h2>
-				<div class="row wrap">
-					<button
-						class="chip"
-						class:on={activePaintId === null}
-						onclick={() => handleSelectColor(null)}>All</button
-					>
-					{#each palette as entry}
+				{#if palette.length}
+					<div class="row wrap">
 						<button
 							class="chip"
-							class:on={activePaintId === entry.id}
-							onclick={() => handleSelectColor(entry.id)}
+							class:on={activePaintId === null}
+							onclick={() => handleSelectColor(null)}>All</button
 						>
-							<span class="dot" style="background:{entry.color}"></span>
-							{entry.label}
-						</button>
-					{/each}
-				</div>
+						{#each palette as entry}
+							<button
+								class="chip"
+								class:on={activePaintId === entry.id}
+								onclick={() => handleSelectColor(entry.id)}
+							>
+								<span class="dot" style="background:{entry.color}"></span>
+								{entry.label}
+							</button>
+						{/each}
+					</div>
 
-				{#if activeEntry}
-					<div class="progress">
-						<div class="bar">
-							<span
-								style="width:{(paintedCount(activeEntry) / activeEntry.count) *
-									100}%"
-							></span>
+					{#if activeEntry}
+						<div class="progress">
+							<div class="bar">
+								<span
+									style="width:{(paintedCount(activeEntry) /
+										activeEntry.count) *
+										100}%"
+								></span>
+							</div>
+							<p>
+								{activeEntry.label}: {paintedCount(activeEntry)} / {activeEntry.count}
+								cells
+							</p>
 						</div>
-						<p>
-							{activeEntry.label}: {paintedCount(activeEntry)} / {activeEntry.count}
-							cells
+					{:else}
+						<div class="progress">
+							<div class="bar">
+								<span
+									style="width:{toPaint ? (totalPainted / toPaint) * 100 : 0}%"
+								></span>
+							</div>
+							<p>Overall: {totalPainted} / {toPaint} cells</p>
+						</div>
+					{/if}
+					{#if activeEntry?.isBase}
+						<p class="hint">
+							This is the generated background. If you used it as the physical
+							base coat, you can skip its guides. Otherwise, use its tape and
+							Square guides like any other color.
 						</p>
-					</div>
+					{/if}
 				{:else}
-					<div class="progress">
-						<div class="bar">
-							<span style="width:{(totalPainted / toPaint) * 100}%"></span>
-						</div>
-						<p>Overall: {totalPainted} / {toPaint} cells</p>
-					</div>
-				{/if}
-				{#if activeEntry?.isBase}
-					<p class="hint">
-						This is the generated background. If you used it as the physical
-						base coat, you can skip its guides. Otherwise, use its tape and
-						Square guides like any other color.
+					<p class="empty-palette">
+						Select at least one custom paint to use the painting controls.
 					</p>
 				{/if}
 
@@ -1524,6 +1558,26 @@
 		width: max-content;
 	}
 
+	.empty-pattern {
+		display: grid;
+		place-items: center;
+		gap: 8px;
+		width: min(460px, 70vw);
+		min-height: 240px;
+		padding: 32px;
+		border: 1px dashed #505762;
+		background: #15181c;
+		color: #b8bfc9;
+		text-align: center;
+	}
+
+	.empty-pattern span,
+	.empty-palette {
+		font-size: 12px;
+		line-height: 1.5;
+		color: #8b929d;
+	}
+
 	.controls {
 		display: flex;
 		flex-direction: column;
@@ -1562,6 +1616,36 @@
 
 	.row.wrap {
 		flex-wrap: wrap;
+	}
+
+	.color-sources {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
+	}
+
+	.color-sources button {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 3px;
+		height: auto;
+		min-height: 60px;
+		padding: 10px;
+		border: 1px solid #3a3f47;
+		background: #22262c;
+		color: #b8bfc9;
+		text-align: left;
+	}
+
+	.color-sources button span {
+		font-size: 11px;
+		color: #8b929d;
+	}
+
+	.color-sources button.on {
+		border-color: gold;
+		box-shadow: inset 0 0 0 1px gold;
 	}
 
 	.row input[type="text"],
@@ -1647,6 +1731,16 @@
 		gap: 12px;
 	}
 
+	.empty-preview {
+		width: 64px;
+		height: 64px;
+		border: 1px dashed #505762;
+		background:
+			linear-gradient(45deg, #20242a 25%, transparent 25%) 0 0 / 12px 12px,
+			linear-gradient(-45deg, #20242a 25%, transparent 25%) 0 0 / 12px 12px,
+			#15181c;
+	}
+
 	.preview-meta {
 		font-size: 13px;
 		line-height: 1.6;
@@ -1683,10 +1777,6 @@
 	.swatch[aria-pressed="true"] {
 		border-color: gold;
 		box-shadow: 0 0 0 2px gold;
-	}
-
-	.swatch[aria-disabled="true"] {
-		cursor: not-allowed;
 	}
 
 	.tag {
