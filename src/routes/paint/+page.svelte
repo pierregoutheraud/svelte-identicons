@@ -9,6 +9,11 @@
 		type ElementSize
 	} from "../../components/paint/paint-grid.dom.js";
 	import { getPaintGridZoomMax } from "../../components/paint/paint-grid.model.js";
+	import {
+		createSeedHistory,
+		moveSeedHistory,
+		recordSeed
+	} from "../../components/paint/seed-history.js";
 	import { onDestroy, onMount, tick } from "svelte";
 	import {
 		buildPalette,
@@ -56,7 +61,8 @@
 	// $derived(parsePaintParams(page.url.searchParams)): the effect below calls
 	// goto() with a URL built from this, so deriving it from the URL turns that
 	// effect into an infinite navigation loop.
-	let params = $state<PaintParams>(parsePaintParams($page.url.searchParams));
+	const initialParams = parsePaintParams($page.url.searchParams);
+	let params = $state<PaintParams>(initialParams);
 	const initialSurface = parsePaintSurfaceParams($page.url.searchParams);
 
 	let painted = $state<boolean[]>([]);
@@ -83,7 +89,12 @@
 	let paletteImportStatus = $state<PaletteImportStatus | null>(null);
 	let paletteStorageReady = $state(false);
 	let shareStatus = $state<"idle" | "copied" | "error">("idle");
+	let seedHistory = $state(createSeedHistory(initialParams.seed));
 	let shareResetTimer: ReturnType<typeof setTimeout> | undefined;
+	const canGoToPreviousSeed = $derived(seedHistory.index > 0);
+	const canGoToNextSeed = $derived(
+		seedHistory.index < seedHistory.entries.length - 1
+	);
 	const actualTapeWidthCm = $derived(
 		Number.isFinite(tapeWidthCm) && tapeWidthCm > 0 ? tapeWidthCm : 0.1
 	);
@@ -439,8 +450,28 @@
 		saveProgress();
 	}
 
+	function commitSeed(seed: string) {
+		seedHistory = recordSeed(seedHistory, seed);
+		if (params.seed !== seed) params = { ...params, seed };
+	}
+
+	function handleSeedChange() {
+		commitSeed(params.seed);
+	}
+
+	function goToSeedHistory(direction: -1 | 1) {
+		const nextHistory = moveSeedHistory(seedHistory, direction);
+		if (nextHistory === seedHistory) return;
+
+		seedHistory = nextHistory;
+		params = {
+			...params,
+			seed: seedHistory.entries[seedHistory.index]
+		};
+	}
+
 	function handleGeneratePattern() {
-		params = { ...params, seed: generateSeed() };
+		commitSeed(generateSeed());
 	}
 
 	function handleGenerateCombination() {
@@ -935,9 +966,33 @@
 						</p>
 					</div>
 				</div>
-				<div class="row">
-					<input type="text" bind:value={params.seed} placeholder="Seed" />
+				<div class="row seed-row">
+					<input
+						type="text"
+						bind:value={params.seed}
+						onchange={handleSeedChange}
+						placeholder="Seed"
+					/>
 					<button onclick={handleGeneratePattern}>New pattern</button>
+				</div>
+				<div class="seed-history-nav">
+					<button
+						class="ghost seed-history-button"
+						disabled={!canGoToPreviousSeed}
+						onclick={() => goToSeedHistory(-1)}
+						title="Previous seed"
+						aria-label="Previous seed">&larr;</button
+					>
+					<p class="seed-history-status" aria-live="polite">
+						Seed {seedHistory.index + 1} of {seedHistory.entries.length}
+					</p>
+					<button
+						class="ghost seed-history-button"
+						disabled={!canGoToNextSeed}
+						onclick={() => goToSeedHistory(1)}
+						title="Next seed"
+						aria-label="Next seed">&rarr;</button
+					>
 				</div>
 				<div class="row">
 					<button
@@ -1768,6 +1823,30 @@
 
 	.row.wrap {
 		flex-wrap: wrap;
+	}
+
+	.seed-row input {
+		flex-basis: 120px;
+	}
+
+	.seed-history-nav {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.seed-history-button {
+		flex: 0 0 40px;
+		padding-inline: 0;
+		font-size: 18px;
+	}
+
+	.seed-history-status {
+		min-width: 0;
+		flex: 1;
+		font-size: 11px;
+		text-align: center;
+		color: #8b929d;
 	}
 
 	.color-sources {
