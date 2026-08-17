@@ -3,6 +3,7 @@ import {
 	buildPalette,
 	buildTapePattern,
 	colorCells,
+	CUSTOM_PALETTE_STORAGE_KEY,
 	createStubCanvas,
 	effectiveColorCount,
 	extractGrid,
@@ -10,9 +11,12 @@ import {
 	generatePaintColorCombination,
 	layoutKey,
 	measure,
+	parsePaintPaletteInput,
 	parsePaintParams,
 	parsePaintSurfaceParams,
+	parseStoredPaintPalette,
 	productionShareUrl,
+	remapSelectedPaintColors,
 	selectPaintColors,
 	serializePaintParams,
 	type PaintParams,
@@ -46,6 +50,98 @@ function grid(params: Partial<PaintParams> = {}) {
 function pattern(colors: string[], cells: string[]) {
 	return cells.map((cell) => colors.indexOf(cell));
 }
+
+describe("bulk custom-palette import", () => {
+	it("uses a versioned local-storage key", () => {
+		expect(CUSTOM_PALETTE_STORAGE_KEY).toBe("paint:custom-palette:v1");
+	});
+
+	it("parses the example palette in order and normalizes its case", () => {
+		expect(
+			parsePaintPaletteInput(`#CFBC9D
+#7F0E43
+#4DB5AF
+#433175
+#1F1F22
+#A9192D`)
+		).toEqual({
+			colors: [
+				"#CFBC9D",
+				"#7F0E43",
+				"#4DB5AF",
+				"#433175",
+				"#1F1F22",
+				"#A9192D"
+			],
+			invalidTokens: [],
+			duplicateCount: 0
+		});
+	});
+
+	it("accepts whitespace, commas, and semicolons", () => {
+		expect(
+			parsePaintPaletteInput("#aabbcc #112233,\n#445566;\t#778899").colors
+		).toEqual(["#AABBCC", "#112233", "#445566", "#778899"]);
+	});
+
+	it("reports invalid tokens and case-insensitive duplicates", () => {
+		expect(
+			parsePaintPaletteInput("#abcdef, nope; #ABCDEF #12345 #123456")
+		).toEqual({
+			colors: ["#ABCDEF", "#123456"],
+			invalidTokens: ["nope", "#12345"],
+			duplicateCount: 1
+		});
+	});
+
+	it("returns no colors when every token is invalid", () => {
+		expect(parsePaintPaletteInput("red #fff 112233")).toEqual({
+			colors: [],
+			invalidTokens: ["red", "#fff", "112233"],
+			duplicateCount: 0
+		});
+	});
+
+	it("recovers valid colors from local storage", () => {
+		expect(
+			parseStoredPaintPalette(
+				JSON.stringify(["#aabbcc", "invalid", "#AABBCC", "#123456", 42])
+			)
+		).toEqual(["#AABBCC", "#123456"]);
+	});
+
+	it("ignores corrupt or non-array local-storage payloads", () => {
+		expect(parseStoredPaintPalette("not json")).toEqual([]);
+		expect(
+			parseStoredPaintPalette(JSON.stringify({ color: "#123456" }))
+		).toEqual([]);
+		expect(parseStoredPaintPalette(null)).toEqual([]);
+	});
+
+	it("preserves matching selections in their previous order", () => {
+		expect(
+			remapSelectedPaintColors(
+				{
+					colors: ["#aa0000", "#00BB00", "#0000cc", "#ffffff"],
+					selectedColorIndices: [2, 0, 1, 3]
+				},
+				["#00bb00", "#0000CC", "#123456", "#AA0000"]
+			)
+		).toEqual([1, 3, 0]);
+	});
+
+	it("maps a duplicated selected hex only once", () => {
+		expect(
+			remapSelectedPaintColors(
+				{
+					colors: ["#ABCDEF", "#abcdef", "#123456"],
+					selectedColorIndices: [1, 0, 2]
+				},
+				["#ABCDEF", "#654321"]
+			)
+		).toEqual([0]);
+	});
+});
 
 describe("extractGrid", () => {
 	it("is deterministic for the same params", () => {

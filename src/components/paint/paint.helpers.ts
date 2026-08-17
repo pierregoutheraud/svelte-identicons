@@ -60,6 +60,58 @@ export interface SelectedPaintColor {
 	sourceIndex: number;
 }
 
+export interface ParsedPaintPaletteInput {
+	colors: string[];
+	invalidTokens: string[];
+	duplicateCount: number;
+}
+
+export const CUSTOM_PALETTE_STORAGE_KEY = "paint:custom-palette:v1";
+
+/** Parses a forgiving list while keeping the custom palette format strict. */
+export function parsePaintPaletteInput(input: string): ParsedPaintPaletteInput {
+	const colors: string[] = [];
+	const invalidTokens: string[] = [];
+	const seen = new Set<string>();
+	let duplicateCount = 0;
+
+	for (const token of input.split(/[\s,;]+/).filter(Boolean)) {
+		if (!/^#[0-9a-f]{6}$/i.test(token)) {
+			invalidTokens.push(token);
+			continue;
+		}
+
+		const color = token.toUpperCase();
+		if (seen.has(color)) {
+			duplicateCount++;
+			continue;
+		}
+
+		seen.add(color);
+		colors.push(color);
+	}
+
+	return { colors, invalidTokens, duplicateCount };
+}
+
+/** Recovers only valid colors from the versioned local-storage payload. */
+export function parseStoredPaintPalette(raw: string | null): string[] {
+	if (!raw) return [];
+
+	try {
+		const stored: unknown = JSON.parse(raw);
+		if (!Array.isArray(stored)) return [];
+
+		return parsePaintPaletteInput(
+			stored
+				.filter((color): color is string => typeof color === "string")
+				.join(",")
+		).colors;
+	} catch {
+		return [];
+	}
+}
+
 function requestedPaintColorCount(
 	params: Pick<PaintParams, "numberOfColors" | "colors">
 ): number {
@@ -76,6 +128,33 @@ function validSelectedColorIndices(
 		(index) =>
 			Number.isInteger(index) && index >= 0 && index < params.colors.length
 	);
+}
+
+/**
+ * Maps selected colors into a replacement palette without changing their old
+ * selection order. A deduplicated replacement can contain a selected hex once.
+ */
+export function remapSelectedPaintColors(
+	current: Pick<PaintParams, "colors" | "selectedColorIndices">,
+	nextColors: string[]
+): number[] {
+	const nextIndexByColor = new Map(
+		nextColors.map((color, index) => [color.toUpperCase(), index])
+	);
+	const remapped: number[] = [];
+	const usedIndexes = new Set<number>();
+
+	for (const currentIndex of validSelectedColorIndices(current)) {
+		const nextIndex = nextIndexByColor.get(
+			current.colors[currentIndex].toUpperCase()
+		);
+		if (nextIndex === undefined || usedIndexes.has(nextIndex)) continue;
+
+		usedIndexes.add(nextIndex);
+		remapped.push(nextIndex);
+	}
+
+	return remapped;
 }
 
 /** Resolves the explicit selection only when the custom source is active. */

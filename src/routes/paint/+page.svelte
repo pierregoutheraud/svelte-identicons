@@ -9,20 +9,24 @@
 		type ElementSize
 	} from "../../components/paint/paint-grid.dom.js";
 	import { getPaintGridZoomMax } from "../../components/paint/paint-grid.model.js";
-	import { onDestroy, tick } from "svelte";
+	import { onDestroy, onMount, tick } from "svelte";
 	import {
 		buildPalette,
 		buildTapePattern,
 		colorCells,
+		CUSTOM_PALETTE_STORAGE_KEY,
 		extractGrid,
 		generatePaintColorCombination,
 		generateSeed,
 		layoutKey,
 		measure,
+		parsePaintPaletteInput,
 		parsePaintParams,
 		parsePaintSurfaceParams,
+		parseStoredPaintPalette,
 		productionShareUrl,
 		randomHex,
+		remapSelectedPaintColors,
 		round,
 		selectPaintColors,
 		serializePaintParams,
@@ -35,6 +39,11 @@
 		selected: number[];
 		generated: number[] | null;
 		showOverlay: boolean;
+	}
+
+	interface PaletteImportStatus {
+		kind: "success" | "warning" | "error";
+		message: string;
 	}
 
 	const EMPTY_TAPE_BATCH: TapeBatchState = {
@@ -70,6 +79,9 @@
 	let showGuides = $state(true);
 	let showHowTo = $state(false);
 	let verifyStatus = $state("");
+	let paletteImportDraft = $state("");
+	let paletteImportStatus = $state<PaletteImportStatus | null>(null);
+	let paletteStorageReady = $state(false);
 	let shareStatus = $state<"idle" | "copied" | "error">("idle");
 	let shareResetTimer: ReturnType<typeof setTimeout> | undefined;
 	const actualTapeWidthCm = $derived(
@@ -82,8 +94,55 @@
 	// textbook self-invalidating loop.
 	let loadedKey = "";
 	let lastUrl = "";
+	let persistedPaletteSnapshot = "";
 
 	onDestroy(() => clearTimeout(shareResetTimer));
+
+	function persistCustomPalette(colors: string[]) {
+		try {
+			if (colors.length) {
+				localStorage.setItem(
+					CUSTOM_PALETTE_STORAGE_KEY,
+					JSON.stringify(colors)
+				);
+			} else {
+				localStorage.removeItem(CUSTOM_PALETTE_STORAGE_KEY);
+			}
+		} catch {
+			// Private mode, quota, or disabled storage must not block paint mode.
+		}
+	}
+
+	onMount(() => {
+		const currentColors = [...params.colors];
+
+		if (currentColors.length) {
+			// A palette in the URL is authoritative and becomes the new saved palette.
+			persistCustomPalette(currentColors);
+			persistedPaletteSnapshot = JSON.stringify(currentColors);
+		} else if (params.colorSource === "seed") {
+			// Restore inventory only. Seed colors stay active until Custom is chosen.
+			let raw: string | null = null;
+			try {
+				raw = localStorage.getItem(CUSTOM_PALETTE_STORAGE_KEY);
+			} catch {
+				// Treat inaccessible storage as empty.
+			}
+			const storedColors = parseStoredPaintPalette(raw);
+
+			if (storedColors.length) {
+				params = { ...params, colors: storedColors };
+			} else if (raw) {
+				persistCustomPalette([]);
+			}
+			persistedPaletteSnapshot = JSON.stringify(storedColors);
+		} else {
+			// An explicitly empty Custom URL must not erase local inventory on load.
+			persistedPaletteSnapshot = JSON.stringify(currentColors);
+		}
+
+		paletteStorageReady = true;
+	});
 
 	// All $derived, not $effect: these are rendered, and effects do not run during
 	// SSR, so an effect would ship an empty grid in the server HTML. extractGrid
@@ -181,6 +240,17 @@
 
 		lastUrl = url;
 		goto(url, { keepFocus: true, noScroll: true, replaceState: true });
+	});
+
+	$effect(() => {
+		if (!paletteStorageReady) return;
+
+		const colors = [...params.colors];
+		const snapshot = JSON.stringify(colors);
+		if (snapshot === persistedPaletteSnapshot) return;
+
+		persistedPaletteSnapshot = snapshot;
+		persistCustomPalette(colors);
 	});
 
 	// Derived rather than corrected after the fact: removing a color slot used to
@@ -444,6 +514,58 @@
 		};
 		// Palette clicks configure the combination; isolation stays in Painting.
 		selectedPaintId = null;
+	}
+
+	function handlePaletteImportInput(event: Event) {
+		paletteImportDraft = (event.currentTarget as HTMLTextAreaElement).value;
+		paletteImportStatus = null;
+	}
+
+	function handleImportPalette() {
+		if (!paletteImportDraft.trim()) return;
+
+		const parsed = parsePaintPaletteInput(paletteImportDraft);
+		if (!parsed.colors.length) {
+			const invalidCount = parsed.invalidTokens.length;
+			paletteImportStatus = {
+				kind: "error",
+				message: invalidCount
+					? `No valid #RRGGBB colors found. ${invalidCount} invalid ${invalidCount === 1 ? "entry" : "entries"}.`
+					: "No valid #RRGGBB colors found."
+			};
+			return;
+		}
+
+		const selectedColorIndices = remapSelectedPaintColors(
+			params,
+			parsed.colors
+		);
+		params = {
+			...params,
+			colorSource: "custom",
+			colors: parsed.colors,
+			selectedColorIndices
+		};
+		selectedPaintId = null;
+		verifyStatus = "";
+		paletteImportDraft = "";
+
+		const ignored: string[] = [];
+		if (parsed.invalidTokens.length) {
+			ignored.push(
+				`${parsed.invalidTokens.length} invalid ${parsed.invalidTokens.length === 1 ? "entry" : "entries"}`
+			);
+		}
+		if (parsed.duplicateCount) {
+			ignored.push(
+				`${parsed.duplicateCount} ${parsed.duplicateCount === 1 ? "duplicate" : "duplicates"}`
+			);
+		}
+
+		paletteImportStatus = {
+			kind: ignored.length ? "warning" : "success",
+			message: `Imported ${parsed.colors.length} ${parsed.colors.length === 1 ? "color" : "colors"}.${ignored.length ? ` Ignored ${ignored.join(" and ")}.` : ""}`
+		};
 	}
 
 	function handleAddColor() {
@@ -888,7 +1010,7 @@
 					<p class="hint">
 						Add every paint you own, then click its swatch to include or remove
 						it. You can leave all paints unselected. Changing a hex does not
-						move any cells.
+						move any cells. Your full palette is saved in this browser.
 					</p>
 					<p class="color-count">
 						<b>{selectedPaints.length}</b>
@@ -909,6 +1031,36 @@
 						>
 							New color combination
 						</button>
+					</div>
+
+					<div class="palette-import">
+						<label for="palette-import-input">Bulk import</label>
+						<textarea
+							id="palette-import-input"
+							value={paletteImportDraft}
+							oninput={handlePaletteImportInput}
+							placeholder="#CFBC9D&#10;#7F0E43&#10;#4DB5AF"
+							spellcheck="false"></textarea>
+						<div class="row palette-import-actions">
+							<button
+								disabled={!paletteImportDraft.trim()}
+								onclick={handleImportPalette}>Import palette</button
+							>
+							<span class="hint inline">
+								#RRGGBB · lines, spaces, commas, semicolons
+							</span>
+						</div>
+						{#if paletteImportStatus}
+							<p
+								class="palette-import-status"
+								class:import-warning={paletteImportStatus.kind === "warning"}
+								class:import-error={paletteImportStatus.kind === "error"}
+								role="status"
+								aria-live="polite"
+							>
+								{paletteImportStatus.message}
+							</p>
+						{/if}
 					</div>
 
 					<p class="palette-heading">Full palette</p>
@@ -1646,6 +1798,62 @@
 	.color-sources button.on {
 		border-color: gold;
 		box-shadow: inset 0 0 0 1px gold;
+	}
+
+	.palette-import {
+		display: grid;
+		gap: 8px;
+		padding: 10px;
+		border: 1px solid #2e333b;
+		background: #15181c;
+	}
+
+	.palette-import label {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #b8bfc9;
+	}
+
+	.palette-import textarea {
+		width: 100%;
+		min-height: 112px;
+		resize: vertical;
+		padding: 10px;
+		border: 1px solid #3a3f47;
+		background: #22262c;
+		color: #f4f5f7;
+		font:
+			13px/1.5 "Cousine",
+			monospace;
+	}
+
+	.palette-import textarea:focus {
+		border-color: gold;
+	}
+
+	.palette-import-actions {
+		flex-wrap: wrap;
+	}
+
+	.palette-import button:disabled {
+		cursor: not-allowed;
+		opacity: 0.45;
+	}
+
+	.palette-import-status {
+		font-size: 12px;
+		line-height: 1.5;
+		color: #7dd97d;
+	}
+
+	.palette-import-status.import-warning {
+		color: gold;
+	}
+
+	.palette-import-status.import-error {
+		color: #ff8f6b;
 	}
 
 	.row input[type="text"],
